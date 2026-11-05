@@ -1,0 +1,159 @@
+/* ============================================================================
+   Lunar OS — área de trabalho
+   Fase 1: apenas o "palco" vazio que o boot revela.
+   Fase 2 assume o papel de parede (Canvas), a barra de tarefas e o Iniciar.
+   ========================================================================= */
+
+.desktop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-desktop);
+  display: grid;
+  place-items: center;
+  padding: clamp(20px, 5vmin, 56px);
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(90% 70% at 22% 10%, rgba(48, 54, 92, 0.5) 0%, transparent 60%),
+    radial-gradient(80% 70% at 84% 92%, rgba(24, 60, 74, 0.42) 0%, transparent 62%),
+    linear-gradient(168deg, #101018 0%, #0b0b10 52%, #09090b 100%);
+  opacity: 0;
+  scale: 1.015;
+  filter: blur(8px);
+  pointer-events: none;
+  transition:
+    opacity 900ms var(--ease-out),
+    scale 1200ms var(--ease-out),
+    filter 900ms var(--ease-out);
+}
+
+.desktop.is-visible {
+  opacity: 1;
+  scale: 1;
+  filter: blur(0);
+  pointer-events: auto;
+}
+
+/* Escurecimento local atrás do conteúdo — sai na Fase 2 */
+.desktop__scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(58% 52% at 50% 46%, rgba(9, 9, 11, 0.82) 0%, rgba(9, 9, 11, 0.25) 58%, transparent 78%);
+}
+
+/* -------------------------------------------------- placeholder da fase 1 - */
+.desktop__placeholder {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  max-width: 540px;
+  text-align: center;
+  padding: clamp(24px, 4vmin, 40px);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: linear-gradient(180deg, rgba(22, 22, 30, 0.6) 0%, rgba(14, 14, 19, 0.45) 100%);
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 30px 80px -30px rgba(0, 0, 0, 0.9);
+}
+
+.desktop__placeholder-logo {
+  width: clamp(96px, 13vmin, 132px);
+  height: auto;
+  opacity: 0.95;
+  filter: drop-shadow(0 0 30px rgba(163, 176, 255, 0.22));
+}
+
+.desktop__title {
+  font-size: clamp(1.9rem, 4.6vmin, 2.6rem);
+  font-weight: 200;
+  letter-spacing: 0.16em;
+  text-indent: 0.16em;
+  text-transform: uppercase;
+  line-height: 1.05;
+  background: linear-gradient(180deg, #ffffff 0%, #b9bed6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.desktop__lede {
+  max-width: 40ch;
+  font-size: 0.875rem;
+  color: var(--lunar-text-dim);
+  text-wrap: balance;
+}
+
+.desktop__next {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  margin: 2px 0 4px;
+  list-style: none;
+  text-align: left;
+}
+
+.desktop__next li {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 0.78125rem;
+  color: var(--lunar-text-faint);
+  line-height: 1.45;
+}
+
+.desktop__next li span {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(139, 149, 255, 0.14);
+  color: #c3c9ff;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.desktop__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.desktop__noscript {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 2;
+  padding: 12px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--lunar-line-strong);
+  background: rgba(20, 20, 26, 0.9);
+  font-size: 0.8125rem;
+  color: var(--lunar-text-dim);
+}
+
+@media (max-width: 520px) {
+  .desktop__placeholder {
+    gap: 14px;
+    padding: 22px 18px;
+  }
+
+  .desktop__next li {
+    font-size: 0.75rem;
+  }
+}

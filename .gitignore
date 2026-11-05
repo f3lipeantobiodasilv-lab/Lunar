@@ -1,0 +1,19 @@
+# Dependências e artefatos de build
+node_modules/
+dist/
+build/
+.vite/
+.cache/
+
+# Sistema operacional / editores
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+
+# --- Convenção do Lunar OS -------------------------------------------------
+# Todo estado da demo vive em memória. Se algum dia for preciso materializar
+# arquivos do VFS em disco para testes longos, eles devem ficar em tmp/ e
+# NUNCA ser versionados.
+tmp/
+src/tmp/
