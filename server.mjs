@@ -19,6 +19,12 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
+// Versão única do projeto (lida do package.json) — usada pelo cliente para
+// detectar que está rodando um build antigo em cache e se atualizar sozinho.
+const VERSION = JSON.parse(
+  fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')
+).version;
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -46,6 +52,19 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Endpoint de versão: dinâmico, nunca cacheado. Fica antes do fs.stat
+  // porque não corresponde a nenhum arquivo em disco.
+  if (pathname === '/version.json') {
+    const body = JSON.stringify({ version: VERSION });
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Length': Buffer.byteLength(body),
+      'Cache-Control': 'no-store, must-revalidate',
+    });
+    res.end(req.method === 'HEAD' ? undefined : body);
+    return;
+  }
+
   fs.stat(filePath, (err, stat) => {
     if (err || !stat.isFile()) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -54,6 +73,7 @@ const server = http.createServer((req, res) => {
     }
 
     const ext = path.extname(filePath).toLowerCase();
+
     // no-store: durante o desenvolvimento o navegador não pode reaproveitar
     // CSS/JS antigos e mostrar uma versão velha da interface.
     res.writeHead(200, {

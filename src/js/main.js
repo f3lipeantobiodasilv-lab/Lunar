@@ -7,9 +7,9 @@
 import { BootSequence } from './boot/boot.js';
 import { audio } from './core/audio.js';
 
-// Identificador de build: se o console não mostrar esta linha, o navegador
-// está servindo uma versão em cache.
-const BUILD = '0.2.0';
+// Identificador de build: se o console não mostrar esta linha (ou mostrar uma
+// versão antiga), o navegador está servindo uma página em cache.
+const BUILD = '0.2.1';
 console.info(`Lunar OS · build ${BUILD}`);
 
 const desktop = document.getElementById('desktop');
@@ -51,5 +51,44 @@ window.addEventListener('keydown', (event) => {
 
 // Em navegadores que exigem gesto, o primeiro clique já habilita o áudio.
 desktop?.addEventListener('pointerdown', () => audio.unlock(), { once: true });
+
+/**
+ * Auto-atualização de build.
+ *
+ * O HTML é o único arquivo que não pode carregar `?v=`: se o navegador guardar
+ * uma página antiga, ela continua pedindo CSS/JS antigos. Aqui comparamos a
+ * versão embutida nesta página com a que o servidor expõe em /version.json e,
+ * quando divergem, recarregamos ignorando o cache.
+ *
+ * Só recarrega quando o boot já terminou (nunca interrompe a animação) e no
+ * máximo uma vez por sessão, para não entrar em laço.
+ */
+const VERSION_KEY = 'lunar:auto-reload';
+
+async function checkBuild() {
+  try {
+    const res = await fetch('version.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const { version } = await res.json();
+    if (!version || version === BUILD) return;
+    if (sessionStorage.getItem(VERSION_KEY) === version) return;
+
+    sessionStorage.setItem(VERSION_KEY, version);
+    console.info(`Lunar OS · build ${BUILD} desatualizado (servidor: ${version}) — recarregando`);
+
+    // location.replace com recarga forçada: descarta o documento antigo.
+    const url = new URL(window.location.href);
+    url.searchParams.set('v', version);
+    window.location.replace(url.toString());
+  } catch {
+    /* offline ou file:// — segue com a versão atual */
+  }
+}
+
+// Verifica depois do boot para não competir com a animação.
+window.setTimeout(() => {
+  if (document.querySelector('#boot')?.classList.contains('is-gone')) checkBuild();
+  else window.setTimeout(checkBuild, 6000);
+}, 6000);
 
 export { boot, audio };
