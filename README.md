@@ -4,10 +4,10 @@ Web OS construído em fases. Esta entrega contém a **Fase 1: tela de boot e ini
 
 ![Fluxo de boot](docs/boot-preview.png)
 
-> **Cache:** o servidor envia `Cache-Control: no-store`, o HTML referencia CSS/JS com `?v=0.2.1`
+> **Cache:** o servidor envia `Cache-Control: no-store`, o HTML referencia CSS/JS com `?v=0.2.2`
 > e a página se auto-atualiza: ela compara a própria versão com `/version.json` (exposto pelo
 > `server.mjs` a partir do `package.json`) e recarrega uma única vez se estiver velha.
-> O rodapé mostra `demo 0.2.1` e o console imprime `Lunar OS · build 0.2.1`.
+> O rodapé mostra `demo 0.2.2` e o console imprime `Lunar OS · build 0.2.2`.
 
 ---
 
@@ -46,7 +46,7 @@ Implementadas em **CSS puro**, sem canvas e sem imagem:
 
 Por que CSS e não canvas: a primeira versão desenhava os pontos numa Canvas 2D. Em navegadores com aceleração de canvas indisponível o canvas ocupava o layout mas não pintava nada. Como `transform` e `opacity` rodam no compositor, a versão em CSS não tem essa dependência.
 
-Com `prefers-reduced-motion` a animação é desligada pela regra global, então os pontos recebem `opacity: 0.85` fixo para não congelarem no frame invisível.
+Com `prefers-reduced-motion` ativo (o "Efeitos de animação" desligado no Windows) a regra global de acessibilidade zera a duração de **todas** as animações — o anel ficaria estático e uniforme, parecendo travado. Por isso as bolinhas reativam a própria animação com `!important` nesse modo, em ritmo 1,8× mais lento. É seguro para quem tem sensibilidade a movimento: a única propriedade animada é `opacity`, nada se desloca pela tela.
 
 ### O boot não depende de `requestAnimationFrame`
 

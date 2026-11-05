@@ -137,12 +137,16 @@
   87.5%, 100%    { opacity: 0.04; }  /* último: praticamente invisível */
 }
 
-/* Com "reduzir movimento" a animação é desligada pela base; sem isto os
-   pontos ficariam congelados no frame final (opacidade 0,16) e quase sumiriam. */
+/* Com "reduzir movimento", a regra global de acessibilidade zera a duração de
+   TODAS as animações — o anel ficaria estático e uniforme, parecendo travado.
+   Aqui reativamos a animação das bolinhas em ritmo mais lento: a única
+   propriedade animada é `opacity` (nada se move pela tela), o que é seguro
+   para quem tem sensibilidade a movimento. */
 @media (prefers-reduced-motion: reduce) {
   .boot__dot {
-    animation: none;
-    opacity: 0.85;
+    animation: bootDotFade calc(var(--count) * var(--step) * 1.8) linear infinite !important;
+    animation-delay: calc(var(--i) * var(--step) * -1.8) !important;
+    animation-iteration-count: infinite !important;
   }
 }
 
