@@ -4,10 +4,10 @@ Web OS construído em fases. Esta entrega contém a **Fase 1: tela de boot e ini
 
 ![Fluxo de boot](docs/boot-preview.png)
 
-> **Cache:** o servidor envia `Cache-Control: no-store`, o HTML referencia CSS/JS com `?v=0.2.2`
+> **Cache:** o servidor envia `Cache-Control: no-store`, o HTML referencia CSS/JS com `?v=0.2.3`
 > e a página se auto-atualiza: ela compara a própria versão com `/version.json` (exposto pelo
 > `server.mjs` a partir do `package.json`) e recarrega uma única vez se estiver velha.
-> O rodapé mostra `demo 0.2.2` e o console imprime `Lunar OS · build 0.2.2`.
+> O rodapé mostra `demo 0.2.3` e o console imprime `Lunar OS · build 0.2.3`.
 
 ---
 
@@ -38,15 +38,70 @@ Não há dependências: `server.mjs` é um servidor estático de ~70 linhas, esc
 
 ### As bolinhas girando
 
-Implementadas em **CSS puro**, sem canvas e sem imagem:
+Implementadas em **CSS puro**, sem canvas e sem imagem. São 8 `<span>` com a mesma
+animação e um `animation-delay` diferente por ponto (`-1500ms ÷ 8 × --i`), de modo que
+num mesmo instante cada ponto está numa fase distinta do ciclo — essa defasagem é o que
+cria o rastro.
 
-1. **Anel**: 8 `<span>` posicionados por `--i` (`rotate(45deg × i) translateY(-ring/2)`).
-2. **Rastro (efeito Windows)**: todos usam o mesmo keyframe de opacidade, defasado em 150 ms por ponto. O keyframe é dividido em 8 faixas de 12,5% com oito níveis distintos (`1 → 0,74 → 0,54 → 0,38 → 0,25 → 0,15 → 0,08 → 0,04`). Como o defasamento é exatamente 1/8 do ciclo, num dado instante cada ponto está num nível diferente: um líder e uma cauda que se dissolve até quase sumir — e o brilho "anda" de ponto em ponto, como no Windows.
-3. **Encerramento**: ao terminar, a animação é trocada por `animation: none` e o anel inteiro acende antes de dissolver junto com o fade-out.
+**Duas animações por ponto, ambas no compositor:**
 
-Por que CSS e não canvas: a primeira versão desenhava os pontos numa Canvas 2D. Em navegadores com aceleração de canvas indisponível o canvas ocupava o layout mas não pintava nada. Como `transform` e `opacity` rodam no compositor, a versão em CSS não tem essa dependência.
+| Animação | O que faz | Propriedade |
+| --- | --- | --- |
+| `dotOrbit` | percorre a elipse do anel, crescendo ao passar pela frente e encolhendo ao voltar | `transform` |
+| `dotBrightness` | sobe rápido (~375 ms) até o pico e decai devagar, formando líder + cauda | `opacity` |
 
-Com `prefers-reduced-motion` ativo (o "Efeitos de animação" desligado no Windows) a regra global de acessibilidade zera a duração de **todas** as animações — o anel ficaria estático e uniforme, parecendo travado. Por isso as bolinhas reativam a própria animação com `!important` nesse modo, em ritmo 1,8× mais lento. É seguro para quem tem sensibilidade a movimento: a única propriedade animada é `opacity`, nada se desloca pela tela.
+A órbita aplica `scaleY(0.62)` antes do `rotate`: o anel vira uma elipse e cada ponto
+encolhe no fundo e cresce na frente, o que dá a leitura 3D (anel inclinado girando).
+
+#### Três armadilhas que já quebraram esta animação
+
+1. **Faixas de 12,5% em `steps`.** A primeira versão do rastro usava 8 patamares de
+   opacidade seguidos de salto. Medido quadro a quadro, o brilho ficava 6 amostras
+   idêntico e então pulava — visualmente, travado. A correção é interpolar a curva
+   (`linear`), não fatiá-la.
+2. **Rotação de 0° a 360°.** `rotate(0deg)` e `rotate(360deg)` são o mesmo ponto, então
+   um keyframe com só `0%` e `100%` não gira: o navegador interpola como "sem mudança".
+   Passos intermediários em 25% / 50% / 75% forçam o avanço.
+3. **Somar o ângulo duas vezes.** O deslocamento de cada ponto já vem do
+   `animation-delay`. Somar também um `rotate(var(--i) * 45deg)` no keyframe girava cada
+   ponto duas vezes e fazia o ponto 4 cair exatamente sobre o ponto 0 — o anel ficava com
+   4 posições e os pontos opostos se cancelavam por diferença de opacidade.
+
+#### Custo por quadro
+
+O desfoque de profundidade (`filter: blur()`) animado foi removido: como `filter` não é
+composto, ele repinta os 8 elementos a cada quadro. Medição no navegador real, tela de
+900×620: **22 fps com `filter`, 60 fps estáveis sem ele**. A profundidade hoje é feita só
+por escala e opacidade.
+
+#### Encerramento
+
+Ao completar, a órbita é congelada e o anel inteiro acende (0,95) antes de dissolver no
+fade-out. O atalho `animation` **zera** o `animation-delay`; sem redeclarar o delay nessa
+regra, os 8 pontos empilham no centro e viram um único blob.
+
+Com `prefers-reduced-motion` ativo (o "Efeitos de animação" desligado no Windows) a regra
+global de acessibilidade zera a duração de **todas** as animações — o anel ficaria
+estático e uniforme, parecendo travado. As bolinhas reativam a própria animação com
+`!important`, em ritmo 2× mais lento, mantendo o rastro.
+
+### Escala fluida (mobile → monitor grande)
+
+Nenhum breakpoint redimensiona o layout em saltos: cada medida é um `clamp()` contínuo
+sobre `vmin`/`vw`.
+
+| Elemento | Regra |
+| --- | --- |
+| Logo | `width: clamp(132px, 28vmin, 264px)` |
+| Anel | `--ring: clamp(58px, 12.5vmin, 118px)` — sempre ~45% do logo |
+| Ponto | `calc(var(--ring) * 0.185)` |
+
+Duas faixas ajustam a proporção quando a **altura** aperta, para logo + anel + texto
+continuarem cabendo sem colisão: `max-height: 620px` e `max-height: 460px` (esta também
+achata menos o anel, `--flat-y: 0.8`, para o texto não encostar nos pontos).
+
+Verificado em 13 telas, de 320×568 a 2560×1440, sem sobreposição e com a proporção
+anel/logo constante em 0,45.
 
 ### O boot não depende de `requestAnimationFrame`
 
