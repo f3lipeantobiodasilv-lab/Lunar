@@ -4,9 +4,9 @@ Web OS construído em fases. Esta entrega contém a **Fase 1: tela de boot e ini
 
 ![Fluxo de boot](docs/boot-preview.png)
 
-> **Cache:** o servidor envia `Cache-Control: no-store` e o HTML referencia CSS/JS com `?v=0.1.3`.
+> **Cache:** o servidor envia `Cache-Control: no-store` e o HTML referencia CSS/JS com `?v=0.2.0`.
 > Se a tela ainda parecer antiga, faça um hard reload (`Ctrl+Shift+R`) — o console deve imprimir
-> `Lunar OS · build 0.1.3` e o rodapé mostra `demo 0.1.3`.
+> `Lunar OS · build 0.2.0` e o rodapé mostra `demo 0.2.0`.
 
 ---
 
@@ -39,13 +39,27 @@ Não há dependências: `server.mjs` é um servidor estático de ~70 linhas, esc
 
 Implementadas em **CSS puro**, sem canvas e sem imagem:
 
-1. **Anel**: 8 `<span>` posicionados por `--i` (`rotate(45deg * i) translateY(-ring/2)`).
-2. **Cauda**: todos rodam o mesmo keyframe de opacidade (`0,16 → 1 → 0,16`), defasado em `-0,14s` por ponto — o resultado é o rastro do carregamento do Windows.
+1. **Anel**: 8 `<span>` posicionados por `--i` (`rotate(45deg × i) translateY(-ring/2)`).
+2. **Rastro (efeito Windows)**: todos usam o mesmo keyframe de opacidade, defasado em 150 ms por ponto. O keyframe é dividido em 8 faixas de 12,5% com oito níveis distintos (`1 → 0,74 → 0,54 → 0,38 → 0,25 → 0,15 → 0,08 → 0,04`). Como o defasamento é exatamente 1/8 do ciclo, num dado instante cada ponto está num nível diferente: um líder e uma cauda que se dissolve até quase sumir — e o brilho "anda" de ponto em ponto, como no Windows.
 3. **Encerramento**: ao terminar, a animação é trocada por `animation: none` e o anel inteiro acende antes de dissolver junto com o fade-out.
 
-Por que CSS e não canvas: a primeira versão desenhava os pontos numa Canvas 2D. Em navegadores com aceleração de canvas indisponível (driver de vídeo, política de GPU), o canvas ocupava o layout mas não pintava nada — as bolinhas simplesmente não apareciam. Como `transform` e `opacity` rodam no compositor, a versão em CSS não tem essa dependência: foi verificada com `--disable-gpu --disable-accelerated-2d-canvas --disable-software-rasterizer` e renderiza igual.
+Por que CSS e não canvas: a primeira versão desenhava os pontos numa Canvas 2D. Em navegadores com aceleração de canvas indisponível o canvas ocupava o layout mas não pintava nada. Como `transform` e `opacity` rodam no compositor, a versão em CSS não tem essa dependência.
 
 Com `prefers-reduced-motion` a animação é desligada pela regra global, então os pontos recebem `opacity: 0.85` fixo para não congelarem no frame invisível.
+
+### O boot não depende de `requestAnimationFrame`
+
+Esta foi a causa de a tela ficar travada em "Iniciando" e só destravar no botão *Pular*: o boot inteiro (progresso, troca de mensagens, conclusão) rodava dentro de um laço de `requestAnimationFrame`, e o próprio `main.js` iniciava a sequência dentro de um rAF. Em abas em segundo plano, **iframes não visíveis** e com throttling, o rAF pode simplesmente nunca disparar.
+
+Hoje:
+
+- `main.js` inicia com `setTimeout(0)`;
+- o progresso é dirigido por `setTimeout(90ms)` e por `performance.now()`, então o tempo real manda;
+- a espera por fontes/imagem usa apenas Promises e `setTimeout`;
+- `visibilitychange` e `focus` realinham o progresso ao voltar;
+- um watchdog de **15 s** chama `skip()` se qualquer coisa travar, então o boot nunca fica preso.
+
+A animação das bolinhas continua sendo CSS, que independe de rAF (e fica pausada quando a aba está oculta, por economia).
 
 ### Responsividade
 

@@ -103,6 +103,7 @@
 
 .boot__dot {
   --count: 8;
+  --step: 0.15s;   /* tempo para o brilho andar de um ponto ao seguinte */
   position: absolute;
   top: 50%;
   left: 50%;
@@ -111,18 +112,29 @@
   margin: calc(var(--dot-size) / -2) 0 0 calc(var(--dot-size) / -2);
   border-radius: 50%;
   background: #fff;
+
+  /* Cada ponto já nasce atrás dos outros: --i define a posição no anel e o
+     mesmo --i define a defasagem do brilho, formando o rastro. */
+  opacity: 0.1;
   transform: rotate(calc(var(--i) * 45deg)) translateY(calc(var(--ring-size) / -2));
-  animation: bootDotFade 1.12s linear infinite;
-  animation-delay: calc(var(--i) * -0.14s);
+  animation: bootDotFade calc(var(--count) * var(--step)) linear infinite;
+  animation-delay: calc(var(--i) * var(--step) * -1);
   will-change: opacity;
 }
 
-/* Fade em cascata: o ponto que "lidera" fica cheio e os demais escurecem,
-   formando o rastro do carregamento do Windows. */
+/* O "cometa": um ponto acende e os 7 seguintes apagam em degraus.
+   Como o atraso de cada ponto é exatamente 1/8 do ciclo, dividir o keyframe
+   em 8 faixas de 12,5% garante que, a qualquer instante, cada ponto tenha um
+   nível DIFERENTE: um líder e uma cauda que se dissolve até quase sumir. */
 @keyframes bootDotFade {
-  0%   { opacity: 0.16; }
-  12%  { opacity: 1; }
-  100% { opacity: 0.16; }
+  0%, 12.4%      { opacity: 1; }     /* líder */
+  12.5%, 24.9%   { opacity: 0.74; }  /* 1º da cauda */
+  25%, 37.4%     { opacity: 0.54; }
+  37.5%, 49.9%   { opacity: 0.38; }
+  50%, 62.4%     { opacity: 0.25; }
+  62.5%, 74.9%   { opacity: 0.15; }
+  75%, 87.4%     { opacity: 0.08; }
+  87.5%, 100%    { opacity: 0.04; }  /* último: praticamente invisível */
 }
 
 /* Com "reduzir movimento" a animação é desligada pela base; sem isto os
@@ -141,7 +153,7 @@
      com a animação pausada, cada ponto ficaria congelado na opacidade da vez. */
   animation: none;
   opacity: 0.95;
-  transition: opacity 420ms var(--ease-out);
+  transition: opacity 400ms var(--ease-out);
 }
 
 .boot.is-leaving .boot__dot {

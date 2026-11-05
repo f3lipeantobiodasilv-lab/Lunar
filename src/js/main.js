@@ -9,7 +9,7 @@ import { audio } from './core/audio.js';
 
 // Identificador de build: se o console não mostrar esta linha, o navegador
 // está servindo uma versão em cache.
-const BUILD = '0.1.3';
+const BUILD = '0.2.0';
 console.info(`Lunar OS · build ${BUILD}`);
 
 const desktop = document.getElementById('desktop');
@@ -22,10 +22,14 @@ const boot = new BootSequence({
   },
 });
 
-// Começa no próximo frame: o CSS já está pintado e o fade-in roda do zero.
-requestAnimationFrame(() => {
+// IMPORTANTE: o boot NÃO pode depender de requestAnimationFrame.
+// Em abas em segundo plano, iframes ocultos ou com throttling, o rAF pode
+// nunca disparar — e a tela ficaria congelada em "Iniciando" para sempre,
+// destravando só quando o usuário clicasse em "Pular".
+// Um setTimeout(0) também roda depois da primeira pintura, mas sempre dispara.
+setTimeout(() => {
   boot.start();
-});
+}, 0);
 
 replayBtn?.addEventListener('click', () => {
   audio.playUiTick({ frequency: 660, peak: 0.06 });

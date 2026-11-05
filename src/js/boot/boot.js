@@ -40,6 +40,10 @@ const STEPS = [
   { at: 0.82, label: 'Quase lá' },
 ];
 
+// Rede de segurança: se algo travar (aba em segundo plano, timer suspenso),
+// o boot nunca fica preso — revela o desktop assim que possível.
+const MAX_BOOT_TIME = 15000;
+
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function sampleCurve(t) {
@@ -71,9 +75,10 @@ export class BootSequence {
 
     this.state = 'idle'; // idle | running | completing | revealing | done
     this._revealTimer = null;
+    this._watchdog = null;
     this.startTime = 0;
     this.progress = 0;
-    this._progressRaf = null;
+    this._progressTimer = null;
     this.lastStep = -1;
     this.assetsReady = false;
     this.waitingForGesture = false;
@@ -84,7 +89,7 @@ export class BootSequence {
       fade: this.reduceMotion ? 260 : 900,
     };
 
-    this._updateProgress = this._updateProgress.bind(this);
+    this._scheduleProgress = this._scheduleProgress.bind(this);
     this._bind();
   }
 
@@ -120,9 +125,15 @@ export class BootSequence {
     this.setStatus(STEPS[0].label);
     this._setDotsPaused(false);
 
+    // Watchdog: independente do que aconteça, o boot não passa de MAX_BOOT_TIME.
+    clearTimeout(this._watchdog);
+    this._watchdog = setTimeout(() => {
+      if (this.state === 'running') this.skip();
+    }, MAX_BOOT_TIME);
+
     // O texto de status só avança quando os recursos estiverem prontos.
     this._waitForAssets();
-    this._progressRaf = requestAnimationFrame(this._updateProgress);
+    this._scheduleProgress();
   }
 
   _bind() {
@@ -153,7 +164,11 @@ export class BootSequence {
     document.addEventListener('visibilitychange', () => {
       if (this.state !== 'running' && this.state !== 'completing') return;
       this._setDotsPaused(document.hidden);
+      if (!document.hidden) this._resyncProgress();
     });
+
+    // Alguns embeds só "acordam" quando ganham foco; realinha ao voltar.
+    window.addEventListener('focus', () => this._resyncProgress());
 
     audio.armUnlockOnFirstGesture();
     this._syncSoundButton();
@@ -163,7 +178,11 @@ export class BootSequence {
     audio.ctx?.addEventListener?.('statechange', () => this._syncSoundButton());
   }
 
-  /** Espera fonte, ícone e um frame — para encerrar só quando estiver tudo lá. */
+  /**
+   * Espera fonte, ícone e layout. Usa apenas Promises e setTimeout — nada de
+   * requestAnimationFrame, que pode nunca disparar (iframe oculto, aba em
+   * segundo plano, throttling agressivo) e travaria o boot em 0%.
+   */
   async _waitForAssets() {
     const jobs = [];
 
@@ -189,19 +208,27 @@ export class BootSequence {
       );
     }
 
-    jobs.push(new Promise((resolve) => requestAnimationFrame(() => resolve())));
+    // Um tick é suficiente: o layout já foi calculado no parse do HTML.
+    jobs.push(wait(0));
 
     await Promise.all(jobs);
     this.assetsReady = true;
   }
 
-  /** Mantém a curva interna de carga e troca a mensagem de status. */
-  _updateProgress(now) {
+  /**
+   * Curva de carga dirigida por TEMPO (setTimeout), não por frames.
+   * requestAnimationFrame pausa em abas ocultas e em iframes não visíveis,
+   * o que deixava o boot parado em "Iniciando" até o usuário clicar em Pular.
+   */
+  _scheduleProgress() {
+    clearTimeout(this._progressTimer);
     if (this.state !== 'running') return;
 
-    const elapsed = now - this.startTime;
+    const elapsed = performance.now() - this.startTime;
     const t = clamp(elapsed / this._timings.load, 0, 1);
     const curve = sampleCurve(t);
+
+    // Segura em 88% até os recursos estarem prontos: nunca "mente" no fim.
     this.progress = this.assetsReady ? curve : Math.min(curve, 0.88);
 
     const step = this._stepFor(this.progress);
@@ -211,12 +238,17 @@ export class BootSequence {
     }
 
     if (t >= 1 && this.assetsReady) {
-      this._progressRaf = null;
       this._complete();
       return;
     }
 
-    this._progressRaf = requestAnimationFrame(this._updateProgress);
+    this._progressTimer = setTimeout(() => this._scheduleProgress(), 90);
+  }
+
+  /** Se o usuário voltar para a aba, realinha o progresso imediatamente. */
+  _resyncProgress() {
+    if (this.state !== 'running') return;
+    this._scheduleProgress();
   }
 
   _stepFor(progress) {
@@ -231,6 +263,7 @@ export class BootSequence {
 
   async _complete() {
     if (this.state !== 'running') return;
+    clearTimeout(this._watchdog);
     this.state = 'completing';
 
     this.el.classList.add('is-complete');
@@ -352,8 +385,9 @@ export class BootSequence {
     // Já revelado: nada a fazer.
     if (this.state === 'done' || this.state === 'revealing') return;
 
-    if (this._progressRaf) cancelAnimationFrame(this._progressRaf);
-    this._progressRaf = null;
+    clearTimeout(this._progressTimer);
+    clearTimeout(this._watchdog);
+    this._progressTimer = null;
     this.assetsReady = true;
 
     if (this.state === 'running') {
@@ -372,7 +406,8 @@ export class BootSequence {
 
   destroy() {
     clearTimeout(this._revealTimer);
-    if (this._progressRaf) cancelAnimationFrame(this._progressRaf);
+    clearTimeout(this._progressTimer);
+    clearTimeout(this._watchdog);
   }
 
   /** Congela/retoma a animação das bolinhas (aba oculta ou fim do boot). */
