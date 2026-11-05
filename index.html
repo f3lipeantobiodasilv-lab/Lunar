@@ -6,23 +6,83 @@
   <meta name="color-scheme" content="dark" />
   <meta name="theme-color" content="#09090b" />
   <title>Lunar OS — Inicialização</title>
-  <meta name="description" content="Lunar OS — demo de Web OS. Fase 1: tela de boot com progresso em Canvas e som sintetizado." />
+  <meta name="description" content="Lunar OS — demo de Web OS. Fase 1: tela de boot com bolinhas em CSS puro e som sintetizado." />
 
   <!-- Tipografia: Plus Jakarta Sans (SIL OFL). Arquivos auto-hospedados para o boot não depender de rede. -->
   <link rel="preload" href="fonts/plus-jakarta-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="fonts/plus-jakarta-sans-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="assets/lunar-boot.png" as="image" type="image/png" />
 
-  <link rel="stylesheet" href="src/css/fonts.css?v=0.2.4" />
-  <link rel="stylesheet" href="src/css/base.css?v=0.2.4" />
-  <link rel="stylesheet" href="src/css/boot.css?v=0.2.4" />
-  <link rel="stylesheet" href="src/css/desktop.css?v=0.2.4" />
+  <link rel="stylesheet" href="src/css/fonts.css?v=0.2.5" />
+  <link rel="stylesheet" href="src/css/base.css?v=0.2.5" />
+  <link rel="stylesheet" href="src/css/boot.css?v=0.2.5" />
+  <link rel="stylesheet" href="src/css/desktop.css?v=0.2.5" />
 
   <script>
     // Troca a flag antes da primeira pintura para evitar flash de conteúdo sem JS.
     document.documentElement.classList.replace('no-js', 'js');
+
+    // ---------------------------------------------------------------
+    // Rede de segurança do boot (script CLÁSSICO, de propósito).
+    //
+    // O controlador do boot é um módulo ES. Se o módulo não carregar —
+    // navegador antigo sem `type="module"`, erro de sintaxe, import bloqueado
+    // por política de rede, extensão interceptando, CDN/proxy caído — nada
+    // acontece e a tela fica preta em "Iniciando" até o usuário clicar em
+    // "Pular". Era exatamente esse o sintoma relatado.
+    //
+    // Este timer roda em um script clássico, avaliado antes do módulo, e não
+    // depende de módulo nenhum: se aos 5 s o boot não tiver sinalizado vida
+    // (data-boot-ready="1" é gravado no primeiro tick do controlador),
+    // revelamos o desktop. O boot também tem o próprio watchdog interno;
+    // este é o caso "o JS nem chegou a rodar".
+    // ---------------------------------------------------------------
+    (function () {
+      var LIMIT_MS = 5000;
+      var done = false;
+
+      function bailOut() {
+        if (done) return;
+        var root = document.documentElement;
+        // O controlador sinalizou vida: o boot é responsabilidade dele.
+        if (root.dataset.bootReady === '1') {
+          done = true;
+          return;
+        }
+        done = true;
+
+        root.classList.add('boot-fallback');
+
+        var boot = document.getElementById('boot');
+        var desktop = document.getElementById('desktop');
+        if (boot) {
+          boot.classList.add('is-gone');
+          boot.setAttribute('aria-hidden', 'true');
+        }
+        if (desktop) {
+          desktop.classList.add('is-visible');
+          desktop.removeAttribute('aria-hidden');
+        }
+        document.body.classList.remove('is-booting');
+        document.title = 'Lunar OS — Área de trabalho';
+        console.warn(
+          'Lunar OS · o controlador do boot não iniciou em ' +
+            LIMIT_MS +
+            ' ms — revelando a área de trabalho sem animação.'
+        );
+      }
+
+      // `load` é o marco real: aí sim dá para exigir que o módulo já rodou.
+      window.addEventListener('load', function () {
+        window.setTimeout(bailOut, LIMIT_MS);
+      });
+
+      // Se a página nem chegar a `load` (recurso pendurado), este timer ainda
+      // dispara — um boot travado nunca pode durar mais que isso.
+      window.setTimeout(bailOut, LIMIT_MS * 2);
+    })();
   </script>
-  <script type="module" src="src/js/main.js?v=0.2.4"></script>
+  <script type="module" src="src/js/main.js?v=0.2.5"></script>
 </head>
 
 <body class="is-booting">
@@ -62,15 +122,16 @@
       </div>
     </div>
 
-    <div class="boot__controls">
-      <button class="boot__sound" id="boot-sound" type="button" data-state="pending">
-        <span class="boot__sound-dot" aria-hidden="true"></span>
-        <span class="boot__sound-label" id="boot-sound-label">Som: aguardando gesto</span>
-      </button>
-      <button class="boot__skip" id="boot-skip" type="button">Pular</button>
+    <div class="boot__foot">
+      <p class="boot__build">lunar os · demo 0.2.5 · fase 1/3</p>
+      <div class="boot__controls">
+        <button class="boot__sound" id="boot-sound" type="button" data-state="pending">
+          <span class="boot__sound-dot" aria-hidden="true"></span>
+          <span class="boot__sound-label" id="boot-sound-label">Som: aguardando gesto</span>
+        </button>
+        <button class="boot__skip" id="boot-skip" type="button">Pular</button>
+      </div>
     </div>
-
-    <p class="boot__build">lunar os · demo 0.2.4 · fase 1/3</p>
   </section>
 
   <!-- ======================================================================

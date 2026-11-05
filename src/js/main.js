@@ -9,7 +9,7 @@ import { audio } from './core/audio.js';
 
 // Identificador de build: se o console não mostrar esta linha (ou mostrar uma
 // versão antiga), o navegador está servindo uma página em cache.
-const BUILD = '0.2.4';
+const BUILD = '0.2.5';
 console.info(`Lunar OS · build ${BUILD}`);
 
 const desktop = document.getElementById('desktop');
@@ -26,14 +26,33 @@ const boot = new BootSequence({
 // Em abas em segundo plano, iframes ocultos ou com throttling, o rAF pode
 // nunca disparar — e a tela ficaria congelada em "Iniciando" para sempre,
 // destravando só quando o usuário clicasse em "Pular".
-// Um setTimeout(0) também roda depois da primeira pintura, mas sempre dispara.
-setTimeout(() => {
-  boot.start();
-}, 0);
+// Também não usamos setTimeout(0): um timer de 0 ms ainda é uma volta no event
+// loop e, em navegador com aba oculta, pode ser adiado (timers de abas em
+// segundo plano são agrupados). Começar de forma síncrona é o único caminho
+// que não depende de agendador nenhum.
+function startBoot() {
+  try {
+    boot.start();
+  } catch (error) {
+    // Um erro no boot não pode terminar em tela preta. Revela o desktop,
+    // que é a única tela útil depois da fase 1.
+    console.error('Lunar OS · falha ao iniciar o boot', error);
+    const bootEl = document.getElementById('boot');
+    const desktopEl = document.getElementById('desktop');
+    document.documentElement.classList.add('boot-fallback');
+    bootEl?.classList.add('is-gone');
+    bootEl?.setAttribute('aria-hidden', 'true');
+    desktopEl?.classList.add('is-visible');
+    desktopEl?.removeAttribute('aria-hidden');
+    document.body.classList.remove('is-booting');
+  }
+}
+
+startBoot();
 
 replayBtn?.addEventListener('click', () => {
   audio.playUiTick({ frequency: 660, peak: 0.06 });
-  boot.start();
+  startBoot();
 });
 
 soundBtn?.addEventListener('click', async () => {

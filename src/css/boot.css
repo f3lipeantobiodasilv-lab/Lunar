@@ -7,9 +7,16 @@
   position: fixed;
   inset: 0;
   z-index: var(--z-boot);
-  display: grid;
-  place-items: center;
-  padding: clamp(16px, 4vmin, 40px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* padding com respiro para notch / barra de gestos do celular */
+  padding:
+    max(14px, env(safe-area-inset-top))
+    max(14px, env(safe-area-inset-right))
+    max(14px, env(safe-area-inset-bottom))
+    max(14px, env(safe-area-inset-left));
   /* Preto puro e chapado: sem gradiente, sem aura, sem grão. */
   background-color: #000;
   overflow: hidden;
@@ -18,6 +25,26 @@
     opacity 900ms var(--ease-out),
     filter 900ms var(--ease-out),
     visibility 0s linear 0s;
+
+  /* ---------------------------------------------------- escala universal --
+     UMA unidade decide o tamanho de tudo: --u.
+     Ela é o menor valor entre
+       40vw  → celular em retrato (a largura é o limite real);
+       44vh  → notebook/netbook com pouca altura, janela achatada, tela dividida;
+       e o teto de 248px para monitores grandes.
+     O piso de 88px protege telas minúsculas (320×480).
+
+     Como logo, anel, ponto e texto saem todos de --u, a composição mantém
+     SEMPRE a mesma proporção — não existe breakpoint que "salta" de tamanho
+     e não existe combinação de tela em que o conteúdo não caiba: tudo cabe
+     porque --u já é proporcional à MENOR dimensão da janela.
+
+     Antes existiam quatro faixas de media query (620px, 460px, 480px de
+     largura, 1600px de largura). Elas se anulavam em janelas como 1024×400
+     ou 717×442 (faixa de altura e de largura brigando pela mesma regra).
+     A escala única eliminou as faixas e o conflito. */
+  --u: clamp(88px, min(40vw, 44vh), 248px);
+  --logo: var(--u);
 }
 
 /* Estado de saída (fade-out elegante) */
@@ -35,21 +62,24 @@
 
 /* -------------------------------------------------------------- palco ---- */
 .boot__stage {
-  position: relative;
-  z-index: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: clamp(30px, 5vmin, 50px);
+  gap: clamp(14px, calc(var(--u) * 0.18), 42px);
   width: min(560px, 100%);
   text-align: center;
 }
 
 /* --------------------------------------------------------------- ícone --- */
 .boot__logo {
-  width: clamp(132px, 28vmin, 264px);
+  width: var(--logo);
   height: auto;
+  /* Nunca encolhe: em janela muito baixa o flex reduziria a ALTURA da imagem
+     e o ícone apareceria achatado. O tamanho vem de --u, não do flex. */
+  flex: 0 0 auto;
   opacity: 0;
   scale: 0.97;
   filter: drop-shadow(0 18px 38px rgba(0, 0, 0, 0.65));
@@ -74,10 +104,11 @@
 
 /* ------------------------------------------------------- bolinhas -------- */
 .boot__loader {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: clamp(6px, calc(var(--u) * 0.035), 12px);
   opacity: 0;
   translate: 0 8px;
   transition: opacity 900ms var(--ease-out) 520ms, translate 900ms var(--ease-out) 520ms;
@@ -89,41 +120,54 @@
 }
 
 /* Bolinhas girando — CSS puro, com perspectiva.
-   Três animações por ponto, todas contínuas (sem degraus):
-     • órbita   → move e escala cada ponto no plano inclinado do anel;
-     • brilho   → opacidade em onda suave, formando a cauda do rastro;
-     • foco     → desfoque/opacidade dos pontos que passam por trás do anel.
-   Como só `transform`, `opacity` e `filter` são animados, tudo roda no
-   compositor e independe de canvas/requestAnimationFrame. */
+   Duas animações por ponto (transform e opacity), ambas contínuas e no
+   compositor: nenhum canvas, nenhum requestAnimationFrame, nenhum reflow.
+   A leitura 3D vem da posição no plano inclinado + escala + brilho, nunca de
+   `rotateX` (que achatava o próprio ponto e fazia as bolinhas parecerem
+   discos chapados no chão) nem de `filter: blur()` animado (que repinta os 8
+   elementos por quadro e derrubava a animação para ~22 FPS). */
 
 .boot__dots {
-  /* Escala fluida: acompanha o menor lado da tela (vmin) entre 56px e 116px. */
-  --ring: clamp(58px, 12.5vmin, 118px);
-  /* Cada ponto ocupa uma fração do anel; tamanho acompanha o anel. */
-  --dot: calc(var(--ring) * 0.185);
-  --orbit: calc(var(--ring) / 2 - var(--dot) / 2);
+  /* Todas as medidas derivam de --u: o anel é sempre 42% do ícone. */
+  --ring: calc(var(--u) * 0.42);
+  /* Diâmetro do ponto: 20% do anel. */
+  --dot: calc(var(--ring) * 0.2);
+  /* Raio da órbita: o ponto (já com sua espessura) cabe dentro de --ring. */
+  --orbit: calc((var(--ring) - var(--dot)) / 2);
   /* Tempo de uma volta completa. */
-  --spin: 1.5s;
-  /* 1 = anel de frente; menor = mais inclinado (elipse/perspectiva).
-     Reduzido nas faixas de janela baixa para o anel não colidir com o texto. */
-  --flat-y: 0.6;
-  /* Altura aparente do anel. É ela (e não --ring) que define quanto o
-     conjunto ocupa na tela: com a perspectiva, a elipse é mais baixa. */
-  --ring-h: calc(var(--ring) * var(--flat-y));
-  /* Quanto o ponto cresce na frente do anel. */
-  --front: 1.28;
+  --spin: 1.6s;
+  /* 1 = anel de frente (círculo); menor = elipse (anel visto de cima).
+     0.62 é o ponto em que a elipse lê como profundidade sem achatar o anel. */
+  --tilt: 0.62;
 
   position: relative;
-  width: var(--ring);
-  height: var(--ring);
   flex: 0 0 auto;
-  /* `preserve-3d` não é usado: a matriz 3D é montada à mão em cada keyframe
-     (ver dotOrbit). Aqui só isolamos a camada para o compositor. */
-  isolation: isolate;
-  /* A elipse é aplicada no eixo Y da órbita: o anel ocupa
-     --ring × (--ring × --flat-y), por isso a altura real é menor que a largura. */
   display: grid;
   place-items: center;
+  width: var(--ring);
+  /* Altura real da elipse: vai da borda de trás à da frente, contando a
+     espessura do ponto. É essa altura (menor que --ring) que define o
+     espaço que o anel ocupa na composição. */
+  height: calc((var(--ring) - var(--dot)) * var(--tilt) + var(--dot));
+  isolation: isolate;
+}
+
+/* Halo ambiente: uma luz fria muito fraca atrás do anel. Dá presença ao
+   carregamento sem mexer no preto absoluto do fundo (é translúcido e curto).
+   Anima só `opacity` — o gradiente em si é estático, então não repinta. */
+.boot__dots::before {
+  content: '';
+  position: absolute;
+  inset: -34%;
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    rgba(168, 182, 255, 0.16) 0%,
+    rgba(120, 136, 220, 0.07) 45%,
+    transparent 72%
+  );
+  animation: ringHalo 3.8s ease-in-out infinite;
+  pointer-events: none;
 }
 
 .boot__dot {
@@ -148,197 +192,235 @@
   box-shadow:
     inset -1px -2px 3px rgba(18, 22, 40, 0.55),
     0 0 9px rgba(196, 208, 255, 0.5);
+  opacity: 0.3;
   will-change: transform, opacity;
 
-  /* Duas animações apenas — e ambas no compositor (transform e opacity).
-     Nada de `filter`: animar desfoque obriga a repintar os 8 elementos a
-     cada frame e derrubava a animação para ~22 FPS. */
-  /* Brilho em rampa CONTÍNUA (nunca `steps`): com passos discretos o líder
-     "salta" de ponto em ponto 8 vezes por ciclo e o spinner volta a parecer
-     travado. Interpolado, os níveis atravessam uns aos outros e o rastro lê
-     como um gradiente suave girando. */
+  /* Duas animações, ambas no compositor:
+       dotPath  → posição na elipse + escala de profundidade (transform)
+       dotLume  → brilho do ponto conforme a profundidade (opacity)
+     Nada de `filter`: o desfoque animado repintava os 8 pontos a cada quadro
+     e derrubava a animação para ~22 FPS. A profundidade é feita por escala
+     e opacidade — 60 FPS estáveis na mesma máquina.
+
+     O atraso é POSITIVO e vale 1/8 do ciclo por ponto: cada ponto entra um
+     pouco depois do vizinho e, com o giro no sentido horário, o ponto 0 é o
+     líder e os demais formam a cauda. Se o sinal fosse negativo a cauda
+     apareceria na frente do líder. */
   animation:
-    dotOrbit var(--spin) linear infinite,
-    dotBrightness var(--spin) linear infinite;
-  /* Atraso POSITIVO: cada ponto entra um pouco depois do vizinho. Combinado
-     com a órbita no sentido anti-horário, o ponto que acabou de acender fica
-     à frente e os anteriores formam a cauda atrás dele — se o sinal fosse
-     negativo, a cauda apareceria na frente e o conjunto leria como uma cobra
-     girando ao contrário do próprio movimento. */
+    dotPath var(--spin) linear infinite,
+    dotLume var(--spin) linear infinite;
   animation-delay:
     calc(var(--spin) / 8 * var(--i)),
     calc(var(--spin) / 8 * var(--i));
 }
 
-/* --- 1. Órbita: percorre o anel com perspectiva -------------------------
-   O ponto começa atrás (menor e apagado), cresce ao passar pela frente e
-   volta a encolher. Combinado com o achatamento em Y, isso dá a sensação de
-   um anel 3D girando em torno de um eixo inclinado. */
-/* ATENÇÃO (dois detalhes que quebram a animação se ignorados):
-   1. rotação é cíclica — 0deg e 360deg são equivalentes, então um keyframe
-      só com 0% e 100% NÃO gira. Os passos de 90deg forçam o avanço.
-   2. o deslocamento angular de cada ponto NÃO entra aqui: ele já vem do
-      `animation-delay` (1/8 do ciclo por ponto). Somar um `rotate(var(--i))`
-      também giraria cada ponto duas vezes e faria o ponto 4 cair exatamente
-      sobre o 0, deixando o anel com só 4 posições. Por isso o keyframe é
-      idêntico para os 8 pontos. */
-/* Órbita em elipse, em 16 paradas.
-   Cada parada é um ponto da elipse (x = R·sen θ, y = −R·cos θ) com uma escala
-   própria: menor no alto (fundo do anel), maior embaixo (frente). 16 paradas,
-   não 4, porque com poucas paradas a interpolação do `translate` corta os
-   cantos e o ponto descreve um losango.
+/* --- 1. Percurso: 16 paradas sobre a elipse ------------------------------
+   x = R·sen θ, y = −R·cos θ. O eixo Y é multiplicado por --tilt (a elipse).
+   16 paradas e não 4: com poucas paradas a interpolação do `translate` corta
+   os cantos e o percurso vira um losango.
 
-   Importante: nada de `rotateX` no elemento. Inclinar o plano com rotação 3D
-   achata o PRÓPRIO ponto (ele vira uma elipse fina, como uma moeda vista de
-   lado) — é o que fazia as bolinhas parecerem chapadas no chão. Aqui a
-   perspectiva vem da posição + escala + opacidade, e o ponto permanece
-   circular.
-   Os multiplicadores são percentuais de `--orbit`, então a elipse acompanha
-   qualquer tamanho de tela. */
-@keyframes dotOrbit {
+   A escala é UNIFORME (nunca scaleY) e cresce com a profundidade: 0.82 no
+   fundo do anel, 1.16 na frente. É isso que dá volume sem deformar o ponto.
+
+   Atenção: o deslocamento angular de cada ponto NÃO entra aqui — ele vem do
+   `animation-delay`. Somar um `rotate(var(--i))` giraria o ponto duas vezes. */
+@keyframes dotPath {
   0% {
-    transform:
-      translate(calc(var(--orbit) * 0 / 100), calc(var(--orbit) * -100 / 100))
-      scale(0.8);
+    transform: translate3d(
+      calc(var(--orbit) * 0),
+      calc(var(--orbit) * -1 * var(--tilt)),
+      0
+    ) scale(0.820);
   }
   6.25% {
-    transform:
-      translate(calc(var(--orbit) * 38.2683 / 100), calc(var(--orbit) * -92.388 / 100))
-      scale(0.8145);
+    transform: translate3d(
+      calc(var(--orbit) * 0.38268),
+      calc(var(--orbit) * -0.92388 * var(--tilt)),
+      0
+    ) scale(0.833);
   }
   12.5% {
-    transform:
-      translate(calc(var(--orbit) * 70.7107 / 100), calc(var(--orbit) * -70.7107 / 100))
-      scale(0.8556);
+    transform: translate3d(
+      calc(var(--orbit) * 0.70711),
+      calc(var(--orbit) * -0.70711 * var(--tilt)),
+      0
+    ) scale(0.870);
   }
   18.75% {
-    transform:
-      translate(calc(var(--orbit) * 92.388 / 100), calc(var(--orbit) * -38.2683 / 100))
-      scale(0.9173);
+    transform: translate3d(
+      calc(var(--orbit) * 0.92388),
+      calc(var(--orbit) * -0.38268 * var(--tilt)),
+      0
+    ) scale(0.925);
   }
   25% {
-    transform:
-      translate(calc(var(--orbit) * 100 / 100), calc(var(--orbit) * -0 / 100))
-      scale(0.99);
+    transform: translate3d(
+      calc(var(--orbit) * 1),
+      calc(var(--orbit) * 0 * var(--tilt)),
+      0
+    ) scale(0.990);
   }
   31.25% {
-    transform:
-      translate(calc(var(--orbit) * 92.388 / 100), calc(var(--orbit) * 38.2683 / 100))
-      scale(1.0627);
+    transform: translate3d(
+      calc(var(--orbit) * 0.92388),
+      calc(var(--orbit) * 0.38268 * var(--tilt)),
+      0
+    ) scale(1.055);
   }
   37.5% {
-    transform:
-      translate(calc(var(--orbit) * 70.7107 / 100), calc(var(--orbit) * 70.7107 / 100))
-      scale(1.1244);
+    transform: translate3d(
+      calc(var(--orbit) * 0.70711),
+      calc(var(--orbit) * 0.70711 * var(--tilt)),
+      0
+    ) scale(1.110);
   }
   43.75% {
-    transform:
-      translate(calc(var(--orbit) * 38.2683 / 100), calc(var(--orbit) * 92.388 / 100))
-      scale(1.1655);
+    transform: translate3d(
+      calc(var(--orbit) * 0.38268),
+      calc(var(--orbit) * 0.92388 * var(--tilt)),
+      0
+    ) scale(1.147);
   }
   50% {
-    transform:
-      translate(calc(var(--orbit) * 0 / 100), calc(var(--orbit) * 100 / 100))
-      scale(1.18);
+    transform: translate3d(
+      calc(var(--orbit) * 0),
+      calc(var(--orbit) * 1 * var(--tilt)),
+      0
+    ) scale(1.160);
   }
   56.25% {
-    transform:
-      translate(calc(var(--orbit) * -38.2683 / 100), calc(var(--orbit) * 92.388 / 100))
-      scale(1.1655);
+    transform: translate3d(
+      calc(var(--orbit) * -0.38268),
+      calc(var(--orbit) * 0.92388 * var(--tilt)),
+      0
+    ) scale(1.147);
   }
   62.5% {
-    transform:
-      translate(calc(var(--orbit) * -70.7107 / 100), calc(var(--orbit) * 70.7107 / 100))
-      scale(1.1244);
+    transform: translate3d(
+      calc(var(--orbit) * -0.70711),
+      calc(var(--orbit) * 0.70711 * var(--tilt)),
+      0
+    ) scale(1.110);
   }
   68.75% {
-    transform:
-      translate(calc(var(--orbit) * -92.388 / 100), calc(var(--orbit) * 38.2683 / 100))
-      scale(1.0627);
+    transform: translate3d(
+      calc(var(--orbit) * -0.92388),
+      calc(var(--orbit) * 0.38268 * var(--tilt)),
+      0
+    ) scale(1.055);
   }
   75% {
-    transform:
-      translate(calc(var(--orbit) * -100 / 100), calc(var(--orbit) * 0 / 100))
-      scale(0.99);
+    transform: translate3d(
+      calc(var(--orbit) * -1),
+      calc(var(--orbit) * 0 * var(--tilt)),
+      0
+    ) scale(0.990);
   }
   81.25% {
-    transform:
-      translate(calc(var(--orbit) * -92.388 / 100), calc(var(--orbit) * -38.2683 / 100))
-      scale(0.9173);
+    transform: translate3d(
+      calc(var(--orbit) * -0.92388),
+      calc(var(--orbit) * -0.38268 * var(--tilt)),
+      0
+    ) scale(0.925);
   }
   87.5% {
-    transform:
-      translate(calc(var(--orbit) * -70.7107 / 100), calc(var(--orbit) * -70.7107 / 100))
-      scale(0.8556);
+    transform: translate3d(
+      calc(var(--orbit) * -0.70711),
+      calc(var(--orbit) * -0.70711 * var(--tilt)),
+      0
+    ) scale(0.870);
   }
   93.75% {
-    transform:
-      translate(calc(var(--orbit) * -38.2683 / 100), calc(var(--orbit) * -92.388 / 100))
-      scale(0.8145);
+    transform: translate3d(
+      calc(var(--orbit) * -0.38268),
+      calc(var(--orbit) * -0.92388 * var(--tilt)),
+      0
+    ) scale(0.833);
   }
   100% {
-    transform:
-      translate(calc(var(--orbit) * -0 / 100), calc(var(--orbit) * -100 / 100))
-      scale(0.8);
+    transform: translate3d(
+      calc(var(--orbit) * 0),
+      calc(var(--orbit) * -1 * var(--tilt)),
+      0
+    ) scale(0.820);
   }
 }
 
+/* --- 2. Brilho: curva CONTÍNUA, nunca `steps` ----------------------------
+   Com patamares discretos o líder "salta" de ponto em ponto oito vezes por
+   ciclo e o spinner volta a parecer travado.
 
-
-
-
-
-/* --- 2. Brilho: onda contínua, sem degraus ------------------------------ */
-/* Onda assimétrica: sobe em 25% do ciclo (375ms — nunca um "flash") e
-   decai lentamente nos 75% restantes. O valor em 0% é IGUAL ao de 100%,
-   então o loop emenda sem salto. Como o atraso de cada ponto vale 1/8 do
-   ciclo, os 8 pontos caem em fases diferentes desta curva e formam, a cada
-   instante, um líder + uma cauda que se dissolve. */
-@keyframes dotBrightness {
-  /* O pico é curto e a cauda cai até 0,02 — praticamente invisível. É isso
-     que faz o rastro "sumir" em vez de virar um anel aceso: só o líder e os
-     dois ou três pontos logo atrás dele têm presença real. */
-  0%   { opacity: 0.02; }
-  6%   { opacity: 0.12; }
-  12%  { opacity: 0.5; }
-  18%  { opacity: 0.9; }
-  25%  { opacity: 1; }
-  34%  { opacity: 0.5; }
-  44%  { opacity: 0.22; }
-  56%  { opacity: 0.09; }
-  70%  { opacity: 0.04; }
-  85%  { opacity: 0.02; }
-  100% { opacity: 0.02; }
+   Aqui o brilho acompanha a profundidade: o ponto aceso é o que está na
+   FRENTE do anel (50% do percurso), e os do fundo ficam apagados — como um
+   anel de metal girando sob uma luz fixa. A subida é mais rápida que a
+   descida (com o atraso positivo, o pico levemente antes da frente), o que
+   cria a sensação de rastro sem precisar de desfoque. */
+@keyframes dotLume {
+  0%     { opacity: 0.30; }
+  6.25%  { opacity: 0.34; }
+  12.5%  { opacity: 0.41; }
+  18.75% { opacity: 0.51; }
+  25%    { opacity: 0.63; }
+  31.25% { opacity: 0.76; }
+  37.5%  { opacity: 0.88; }
+  43.75% { opacity: 0.96; }
+  50%    { opacity: 1.00; }
+  56.25% { opacity: 0.92; }
+  62.5%  { opacity: 0.78; }
+  68.75% { opacity: 0.65; }
+  75%    { opacity: 0.53; }
+  81.25% { opacity: 0.44; }
+  87.5%  { opacity: 0.38; }
+  93.75% { opacity: 0.33; }
+  100%   { opacity: 0.30; }
 }
 
+/* Respiro do halo: MUITO discreto (a opacidade total fica abaixo de 0.16) e
+   fora de fase com o giro, para o conjunto não "pulsar no compasso". */
+@keyframes ringHalo {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
 
-
-
-/* Encerramento: para de orbitar, acende todos e dissolve com o fade-out. */
+/* Encerramento: a órbita congela e o anel inteiro ACENDE numa onda — cada
+   ponto acende ~30 ms depois do anterior, então a luz percorre o anel antes
+   do fade-out. Antes os 8 pontos tentavam acender juntos e o efeito não
+   acontecia: a animação de opacidade congelada tem precedência sobre o
+   `opacity` da regra, então o anel nunca chegava a 1. Agora a "onda" é uma
+   segunda animação (dotSeal), que roda de verdade mesmo com a órbita pausada
+   e mantém o resultado com `forwards`. */
 .boot.is-complete .boot__dot,
 .boot.is-leaving .boot__dot {
-  /* Só a órbita permanece — congelada. Atenção: o atalho `animation` ZERA o
-     animation-delay, então o delay de cada ponto tem de ser redeclarado
-     depois dele; sem isso os 8 pontos empilham no centro e viram um blob. */
-  animation: dotOrbit var(--spin) linear infinite;
-  animation-delay: calc(var(--spin) / 8 * var(--i));
-  animation-play-state: paused;
-  opacity: 0.95;
-  box-shadow: 0 0 14px rgba(210, 218, 255, 0.6);
-  transition: opacity 420ms var(--ease-out), box-shadow 420ms var(--ease-out);
+  /* ATENÇÃO: o atalho `animation` ZERA o animation-delay. Sem redeclarar o
+     delay de cada ponto nesta regra, os 8 empilham no centro e viram um
+     único blob. */
+  animation:
+    dotPath var(--spin) linear infinite,
+    dotSeal 460ms var(--ease-out) forwards;
+  animation-delay:
+    calc(var(--spin) / 8 * var(--i)),
+    calc(var(--i) * 30ms);
+  /* Órbita congelada no instante do fim; a onda de brilho continua rodando. */
+  animation-play-state: paused, running;
+  box-shadow:
+    inset -1px -2px 3px rgba(18, 22, 40, 0.5),
+    0 0 14px rgba(210, 218, 255, 0.62);
 }
 
-.boot.is-leaving .boot__dot {
-  opacity: 0;
+@keyframes dotSeal {
+  0%   { opacity: 0.35; }
+  45%  { opacity: 1; }
+  100% { opacity: 0.92; }
 }
 
-/* Movimento reduzido: o anel continua animando, porém devagar. A única
-   coisa que muda na tela é opacidade/tamanho — nada atravessa a tela. */
+
+/* Movimento reduzido: o anel continua animando, porém bem devagar. A única
+   coisa que muda na tela é opacidade e tamanho — nada atravessa a tela. */
 @media (prefers-reduced-motion: reduce) {
   /* A regra global de `base.css` zera as animações; aqui elas são
-     REATIVADAS — só que em câmera lenta (2x). Sem este `!important` o anel
+     REATIVADAS — só que em câmera lenta (2×). Sem este `!important` o anel
      congela num círculo estático e uniforme. Duas durações, uma por
-     animação: órbita e brilho. */
+     animação: percurso e brilho. */
   .boot__dot {
     animation-duration: calc(var(--spin) * 2), calc(var(--spin) * 2) !important;
     animation-iteration-count: infinite !important;
@@ -348,10 +430,13 @@
 /* -------------------------------------------------------------- status --- */
 .boot__status {
   min-height: 1.4em;
-  font-size: 0.75rem;
+  max-width: 26ch;
+  font-size: clamp(11px, calc(var(--u) * 0.062), 14px);
   font-weight: 400;
   letter-spacing: 0.02em;
+  line-height: 1.4;
   color: var(--lunar-text-faint);
+  text-wrap: balance;
   transition: color 400ms var(--ease-out), opacity 400ms var(--ease-out);
 }
 
@@ -376,25 +461,36 @@
   50%      { opacity: 0.55; }
 }
 
-/* ------------------------------------------------------------ controles -- */
-.boot__controls {
-  position: absolute;
+/* ---------------------------------------------------- rodapé/controles ---
+   Antes os controles eram `position: absolute` no canto e podiam passar por
+   cima do texto de status em janelas baixas. Agora eles vivem no fluxo do
+   flex como rodapé: nunca sobrepõem nada, em nenhuma tela. */
+.boot__foot {
   z-index: 2;
-  right: clamp(14px, 2.6vmin, 30px);
-  bottom: clamp(14px, 2.6vmin, 30px);
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  flex-wrap: nowrap;
-  gap: 8px;
-  white-space: nowrap;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  max-width: 760px;
   opacity: 0;
   translate: 0 6px;
   transition: opacity 900ms var(--ease-out) 900ms, translate 900ms var(--ease-out) 900ms;
 }
 
-.boot.is-entered .boot__controls {
+.boot.is-entered .boot__foot {
   opacity: 1;
   translate: 0 0;
+}
+
+.boot__controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin-left: auto; /* empurra para a direita mesmo sem o rótulo de build */
+  white-space: nowrap;
 }
 
 .boot__sound,
@@ -402,7 +498,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 30px;
+  height: max(30px, 1.875rem);
   padding: 0 12px;
   border-radius: 999px;
   white-space: nowrap;
@@ -410,7 +506,7 @@
   border: 1px solid var(--lunar-line);
   background: rgba(255, 255, 255, 0.03);
   color: var(--lunar-text-faint);
-  font-size: 0.6875rem;
+  font-size: clamp(10px, calc(var(--u) * 0.05), 11px);
   font-weight: 500;
   letter-spacing: 0.03em;
   transition: color var(--dur-fast) var(--ease-out),
@@ -423,6 +519,15 @@
   color: var(--lunar-text);
   border-color: var(--lunar-line-strong);
   background: rgba(255, 255, 255, 0.06);
+}
+
+/* Alvo de toque confortável no celular sem inchar o layout no desktop. */
+@media (hover: none), (pointer: coarse) {
+  .boot__sound,
+  .boot__skip {
+    height: 34px;
+    padding: 0 14px;
+  }
 }
 
 .boot__sound-dot {
@@ -458,113 +563,71 @@
 
 /* ---------------------------------------------------------------- build -- */
 .boot__build {
-  position: absolute;
-  z-index: 2;
-  left: clamp(14px, 2.6vmin, 30px);
-  bottom: clamp(16px, 2.6vmin, 32px);
-  font-size: 0.6875rem;
+  flex: 0 0 auto;
+  font-size: clamp(9px, calc(var(--u) * 0.045), 11px);
   font-weight: 400;
   letter-spacing: 0.14em;
   text-transform: lowercase;
   color: rgba(255, 255, 255, 0.2);
-  opacity: 0;
-  transition: opacity 900ms var(--ease-out) 900ms;
-}
-
-.boot.is-entered .boot__build {
-  opacity: 1;
+  white-space: nowrap;
 }
 
 /* --------------------------------------------------------- responsivo ---- */
-@media (max-width: 520px) {
-  .boot__controls {
-    right: 50%;
-    translate: 50% 0;
-    bottom: 14px;
-  }
 
-  .boot.is-entered .boot__controls {
-    translate: 50% 0;
+/* Celular em retrato e janelas estreitas: controles centralizados, rótulo de
+   build oculto (é o primeiro item a sair, não os controles). */
+@media (max-width: 520px) {
+  .boot__foot {
+    justify-content: center;
   }
 
   .boot__build {
     display: none;
   }
+
+  .boot__controls {
+    margin-left: 0;
+  }
 }
 
-/* ============================================================================
-   ESCALA FLUIDA
-   Em vez de breakpoints que "pulam" de tamanho, cada medida é um clamp()
-   contínuo sobre vmin/vw. A composição cresce e encolhe junto com a janela,
-   sem saltos, de celulares pequenos a monitores grandes.
+/* Janelas muito baixas (banner, tela dividida, celular deitado): a unidade
+   encolhe mais rápido pela altura e o rodapé fica compacto. É a única faixa
+   que ainda existe — e ela só mexe no tamanho, nunca na proporção. */
+@media (max-height: 440px) {
+  .boot {
+    --u: clamp(64px, min(38vw, 42vh), 200px);
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
 
-   Reserva de altura: logo + vão + anel + vão + texto precisam caber em 100vh.
-   Por isso o logo usa uma fração menor de vmin quando a janela é baixa —
-   ajustado em duas faixas declarativas (não há JS de layout no caminho).
-   ========================================================================= */
-
-/* Janelas baixas (laptop deitado, janela pequena): proporções mais enxutas */
-@media (max-height: 620px) {
   .boot__stage {
-    gap: clamp(18px, 4vmin, 30px);
+    gap: clamp(10px, calc(var(--u) * 0.12), 18px);
   }
 
-  .boot__logo {
-    width: clamp(104px, 22vmin, 158px);
+  .boot__build {
+    display: none;
   }
 
-  .boot__dots {
-    --ring: clamp(46px, 9.9vmin, 72px);
-    --flat-y: 0.7;   /* anel mais "de frente" para não colidir com o texto */
+  .boot__foot {
+    justify-content: center;
+  }
+
+  .boot__controls {
+    margin-left: 0;
   }
 }
 
-/* Janelas muito baixas (banner, tela dividida) */
-@media (max-height: 460px) {
-  .boot__stage {
-    gap: 14px;
-  }
-
-  .boot__logo {
-    width: clamp(84px, 17vmin, 116px);
-  }
-
-  .boot__dots {
-    --ring: clamp(38px, 7.7vmin, 52px);
-    --flat-y: 0.8;
-  }
-
-  .boot__status {
-    font-size: 0.6875rem;
-  }
+/* Fallback de emergência: o script inline do index.html adiciona
+   `.boot-fallback` no <html> se o módulo JS não sinalizar vida em 5 s.
+   Nesse caso o boot sai de cena e o desktop aparece — melhor um desktop sem
+   animação do que uma tela preta pedindo que o usuário clique em "Pular". */
+.boot-fallback .boot {
+  display: none;
 }
 
-/* Celular em retrato: a largura manda, então usamos vw em vez de vmin */
-@media (max-width: 480px) and (min-height: 621px) {
-  .boot__stage {
-    gap: clamp(22px, 5vmin, 34px);
-  }
-
-  .boot__logo {
-    width: clamp(104px, 30vw, 168px);
-  }
-
-  .boot__dots {
-    --ring: clamp(48px, 13.5vw, 76px);
-  }
-}
-
-/* Telas grandes (>= 1600px de largura): segura o ícone para não virar desproporcional */
-@media (min-width: 1600px) {
-  .boot__logo {
-    width: 264px;
-  }
-
-  .boot__dots {
-    --ring: 118px;
-  }
-
-  .boot__status {
-    font-size: 0.8125rem;
-  }
+.boot-fallback .desktop {
+  opacity: 1;
+  scale: 1;
+  filter: none;
+  pointer-events: auto;
 }

@@ -10,7 +10,13 @@
   z-index: var(--z-desktop);
   display: grid;
   place-items: center;
-  padding: clamp(20px, 5vmin, 56px);
+  /* Respiro seguro para notch/barra de gestos; o padding também é a área de
+     folga do cartão em telas baixas. */
+  padding:
+    max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
   overflow: hidden;
   isolation: isolate;
   background:
@@ -49,10 +55,18 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
+  gap: clamp(10px, 1.8vmin, 18px);
   max-width: 540px;
+  /* O cartão nunca pode ser mais alto que a viewport: em 1024×400 ou 717×442
+     ele era cortado pelo `overflow: hidden` do .desktop e o usuário perdia os
+     botões inferiores. Com max-height + rolagem interna, o conteúdo continua
+     alcançável em qualquer tela. */
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   text-align: center;
-  padding: clamp(24px, 4vmin, 40px);
+  padding: clamp(16px, 3.4vmin, 40px);
   border-radius: 24px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   background: linear-gradient(180deg, rgba(22, 22, 30, 0.6) 0%, rgba(14, 14, 19, 0.45) 100%);
@@ -147,13 +161,87 @@
   color: var(--lunar-text-dim);
 }
 
-@media (max-width: 520px) {
+/* --------------------------------------------------------- adaptação ----- */
+
+/* Telas baixas (celular deitado, notebook 1366×768 com barra, janela pequena):
+   o cartão encolhe em tudo — logo, título, espaçamento — para caber inteiro
+   sem rolagem. */
+@media (max-height: 620px) {
   .desktop__placeholder {
-    gap: 14px;
-    padding: 22px 18px;
+    gap: 10px;
+    padding: 16px clamp(14px, 3vmin, 24px);
+  }
+
+  .desktop__placeholder-logo {
+    width: clamp(56px, 11vmin, 84px);
+  }
+
+  .desktop__lede {
+    font-size: 0.8125rem;
+  }
+
+  .desktop__next {
+    gap: 6px;
+  }
+
+  .desktop__next li {
+    padding: 7px 11px;
+    font-size: 0.71875rem;
+  }
+}
+
+@media (max-height: 460px) {
+  .desktop__placeholder {
+    gap: 8px;
+    padding: 12px 14px;
+    border-radius: 18px;
+  }
+
+  .desktop__placeholder-logo {
+    width: 48px;
+  }
+
+  .desktop__title {
+    font-size: 1.25rem;
+  }
+
+  /* Em tela dividida o cartão vira uma faixa: o texto explicativo sai e ficam
+     as ações, que é o que o usuário precisa alcançar. */
+  .desktop__next {
+    display: none;
+  }
+
+  .desktop__actions {
+    margin-top: 0;
+  }
+}
+
+/* Celular em retrato: cartão de largura total, controles empilhados só se
+   realmente não couberem lado a lado. */
+@media (max-width: 520px) {
+  .desktop {
+    align-items: center;
+  }
+
+  .desktop__placeholder {
+    width: 100%;
+    gap: 12px;
+    padding: 20px 16px;
+    border-radius: 20px;
   }
 
   .desktop__next li {
     font-size: 0.75rem;
+  }
+
+  .desktop__actions .ui-button {
+    flex: 1 1 140px;
+  }
+}
+
+/* Alvo de toque confortável (44px) somente em dispositivos de toque. */
+@media (hover: none), (pointer: coarse) {
+  .ui-button {
+    min-height: 44px;
   }
 }

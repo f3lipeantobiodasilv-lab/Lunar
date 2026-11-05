@@ -99,15 +99,48 @@ export class BootSequence {
     };
 
     this._scheduleProgress = this._scheduleProgress.bind(this);
+    this._resizeTimer = null;
+    this._statusReserved = false;
+
+    // Antes de qualquer outra coisa: avisa o fallback do HTML que o módulo
+    // chegou a rodar. Se este ponto for alcançado, o boot é problema daqui.
+    BootSequence.signalAlive();
     this._bind();
+
+    // Fontes e ícone têm de começar a carregar no construtor, e não em
+    // `start()`: no primeiro carregamento o módulo é adiado (`type="module"`
+    // é deferido) e começar a espera só depois da primeira pintura custava
+    // uma janela de rede inteira antes do fim do boot. A promessa fica
+    // guardada e é reaproveitada por `start()`.
+    this._assetsPromise = this._waitForAssets().catch(() => true);
+
+    // A reserva de altura do status precisa da fonte carregada para medir a
+    // quebra de linha certa; por isso ela acontece agora e de novo depois
+    // das fontes.
+    this._reserveStatus();
+    document.fonts?.ready?.then?.(() => this._reserveStatus());
   }
 
   // --------------------------------------------------------------- ciclo ----
 
+  /**
+   * Sinal de vida para o fallback do index.html: a partir daqui o módulo
+   * carregou e o próprio controlador assume a responsabilidade pelo boot
+   * (o timer do HTML deixa de agir). Gravado no construtor, ou seja, antes
+   * de qualquer await — se o módulo chegou, este atributo já existe.
+   */
+  static signalAlive() {
+    document.documentElement.dataset.bootReady = '1';
+  }
+
   async start() {
     if (!this.el) return;
+    // Qualquer exceção inesperada dentro de start()/do laço de progresso
+    // termina em tela preta se ninguém tratar. Aqui a única saída segura é
+    // revelar a área de trabalho imediatamente.
     clearTimeout(this._revealTimer);
     clearTimeout(this._completeGuard);
+    clearTimeout(this._progressTimer);
     this._revealTimer = null;
 
     this.state = 'running';
@@ -122,9 +155,9 @@ export class BootSequence {
       'is-complete',
       'is-awaiting-gesture'
     );
-    this.el.classList.add('is-entered');
     this.el.removeAttribute('aria-hidden');
     this.el.inert = false;
+    document.documentElement.classList.remove('boot-fallback');
     document.body.classList.add('is-booting');
 
     this._releaseGestureWait();
@@ -135,6 +168,14 @@ export class BootSequence {
     this.setStatus(STEPS[0].label);
     this._setDotsPaused(false);
 
+    // O logo entra com fade assim que a página pinta. Um único frame basta
+    // para o navegador registrar o estado inicial e animar a transição; se
+    // ele não vier (aba oculta), o estado final é aplicado de qualquer forma,
+    // então o logo nunca fica invisível esperando um frame.
+    wait(this.reduceMotion ? 0 : 40).then(() => {
+      if (this.state === 'running') this.el.classList.add('is-entered');
+    });
+
     // Watchdog: independente do que aconteça, o boot não passa de MAX_BOOT_TIME.
     clearTimeout(this._watchdog);
     this._watchdog = setTimeout(() => {
@@ -142,7 +183,16 @@ export class BootSequence {
     }, MAX_BOOT_TIME);
 
     // O texto de status só avança quando os recursos estiverem prontos.
-    this._waitForAssets();
+    // A promessa foi criada no construtor (o carregamento já estava em curso)
+    // e nunca rejeita: `_waitForAssets` limita cada etapa com prazo próprio.
+    this._assetsPromise
+      .then(() => {
+        if (this.state === 'running') this.assetsReady = true;
+      })
+      .catch(() => {
+        this.assetsReady = true;
+      });
+
     this._scheduleProgress();
   }
 
@@ -171,6 +221,19 @@ export class BootSequence {
     window.addEventListener('keydown', unlockOnGesture, { once: true });
 
     // Pausa a animação quando a aba fica oculta (economia real de bateria).
+    // Recalcula a reserva de altura quando a janela muda de tamanho (rotação,
+    // resize do desktop, barra de endereço do celular recolhendo).
+    this._onResize = () => {
+      if (this._resizeTimer) clearTimeout(this._resizeTimer);
+      this._resizeTimer = setTimeout(() => {
+        this._resizeTimer = null;
+        this._reserveStatus();
+        this._syncSoundButton();
+      }, 180);
+    };
+    window.addEventListener('resize', this._onResize);
+    window.addEventListener('orientationchange', this._onResize);
+
     document.addEventListener('visibilitychange', () => {
       if (this.state !== 'running' && this.state !== 'completing') return;
       this._setDotsPaused(document.hidden);
@@ -222,7 +285,7 @@ export class BootSequence {
     jobs.push(wait(0));
 
     await Promise.all(jobs);
-    this.assetsReady = true;
+    return true;
   }
 
   /**
@@ -248,7 +311,10 @@ export class BootSequence {
     }
 
     if (t >= 1 && this.assetsReady) {
-      this._complete();
+      // `_complete` é assíncrona: sem o catch, uma exceção (Web Audio
+      // indisponível, elemento removido por uma extensão) virava uma Promise
+      // rejeitada sem tratamento e a tela ficava no boot para sempre.
+      this._complete().catch((error) => this._failSafe(error));
       return;
     }
 
@@ -278,8 +344,12 @@ export class BootSequence {
 
     this.el.classList.add('is-complete');
     this.setStatus('Pronto');
-    // Acende o anel inteiro; a dissolução acompanha o fade-out (.is-leaving).
-    this._setDotsPaused(true);
+    // O congelamento da órbita e a onda de brilho do fim são declarados no CSS
+    // (.boot.is-complete .boot__dot): `animation-play-state: paused, running`.
+    // Por isso limpamos aqui qualquer pausa inline que tenha vindo de uma
+    // passagem por aba oculta — estilo inline vence a folha de estilo e
+    // pausaria também a onda.
+    this._setDotsPaused(false);
 
     // Rede de segurança final: por melhor que seja o tratamento de áudio, uma
     // etapa que não resolva não pode impedir a tela de sair do boot. Este
@@ -424,14 +494,46 @@ export class BootSequence {
     }
   }
 
+  /**
+   * Última linha de defesa do controlador: revela a área de trabalho mesmo que
+   * o estado interno esteja inconsistente. Chamado se alguma etapa lançar.
+   */
+  _failSafe(error) {
+    if (error) console.error('Lunar OS · boot interrompido por erro', error);
+
+    clearTimeout(this._progressTimer);
+    clearTimeout(this._watchdog);
+    clearTimeout(this._completeGuard);
+    clearTimeout(this._revealTimer);
+
+    this.state = 'revealing';
+    this.el?.classList.add('is-leaving');
+    this.desktop?.classList.add('is-visible');
+    this.desktop?.removeAttribute('aria-hidden');
+    document.body.classList.remove('is-booting');
+
+    this._revealTimer = setTimeout(() => {
+      this.el?.classList.add('is-gone');
+      this.el?.setAttribute('aria-hidden', 'true');
+      document.documentElement.classList.add('boot-fallback');
+      this.state = 'done';
+    }, this.reduceMotion ? 0 : this._timings.fade);
+  }
+
   destroy() {
     clearTimeout(this._revealTimer);
     clearTimeout(this._progressTimer);
     clearTimeout(this._watchdog);
     clearTimeout(this._completeGuard);
+    clearTimeout(this._resizeTimer);
+    window.removeEventListener('resize', this._onResize);
+    window.removeEventListener('orientationchange', this._onResize);
   }
 
-  /** Congela/retoma a animação das bolinhas (aba oculta ou fim do boot). */
+  /**
+   * Congela/retoma a animação das bolinhas. Usado apenas para economizar
+   * bateria com a aba oculta — o fim do boot é tratado no CSS.
+   */
   _setDotsPaused(paused) {
     if (!this.dots) return;
     this.dots.style.animationPlayState = paused ? 'paused' : '';
@@ -441,6 +543,31 @@ export class BootSequence {
   }
 
   // -------------------------------------------------------------- helpers ---
+
+  /**
+   * Reserva as três linhas do texto de status medindo a MAIOR mensagem do
+   * fluxo. Sem isso, ao trocar "Iniciando" por "Toque na tela para ouvir o
+   * som de boot" o parágrafo cresce, o palco centraliza de novo e logo + anel
+   * pulam de posição — um solavanco bem visível no fim do boot.
+   *
+   * Roda no construtor e no resize (a fonte e a largura mudam as quebras de
+   * linha). Não depende de frames: uma leitura de layout e uma escrita.
+   */
+  _reserveStatus() {
+    if (!this.statusEl || !this.statusEl.isConnected) return;
+
+    const longest = 'Toque na tela para ouvir o som de boot';
+    const current = this.statusEl.textContent;
+
+    // Mede com a mensagem mais longa, sem deixar a troca visível na tela.
+    this.statusEl.style.minHeight = '';
+    this.statusEl.textContent = longest;
+    const height = this.statusEl.getBoundingClientRect().height;
+    this.statusEl.textContent = current;
+    if (height > 0) this.statusEl.style.minHeight = `${Math.ceil(height)}px`;
+
+    this._statusReserved = true;
+  }
 
   setStatus(text) {
     if (!this.statusEl || this.statusEl.textContent === text) return;
@@ -460,7 +587,12 @@ export class BootSequence {
 
     // Em telas estreitas o rótulo completo quebra em três linhas; usamos uma
     // versão curta e mantemos o texto completo em aria-label/title.
-    const compact = window.matchMedia('(max-width: 560px)').matches;
+    // `matchMedia` não existe em todos os ambientes (WebViews antigas, alguns
+    // embeds). Sem o guarda, a exceção subia pelo construtor e o boot inteiro
+    // morria em "Iniciando" — reportado como "precisa clicar em Pular".
+    const compact =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(max-width: 560px)').matches;
     const full = {
       on: 'Som: ativado',
       off: 'Som: desativado',
