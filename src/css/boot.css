@@ -88,9 +88,64 @@
   translate: 0 0;
 }
 
-.boot__spinner {
-  width: clamp(84px, 11vmin, 104px);
-  aspect-ratio: 1;
+/* Bolinhas girando — CSS puro.
+   Cada ponto é posicionado no anel por --i (8 posições) e animado com o mesmo
+   keyframe, defasado por --i. Como a animação só toca transform/opacity, roda
+   no compositor: funciona mesmo quando o canvas não tem aceleração. */
+.boot__dots {
+  --dot-size: clamp(7px, 1.15vmin, 12px);
+  --ring-size: clamp(64px, 9.5vmin, 92px);
+  position: relative;
+  width: var(--ring-size);
+  height: var(--ring-size);
+  flex: 0 0 auto;
+}
+
+.boot__dot {
+  --count: 8;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--dot-size);
+  height: var(--dot-size);
+  margin: calc(var(--dot-size) / -2) 0 0 calc(var(--dot-size) / -2);
+  border-radius: 50%;
+  background: #fff;
+  transform: rotate(calc(var(--i) * 45deg)) translateY(calc(var(--ring-size) / -2));
+  animation: bootDotFade 1.12s linear infinite;
+  animation-delay: calc(var(--i) * -0.14s);
+  will-change: opacity;
+}
+
+/* Fade em cascata: o ponto que "lidera" fica cheio e os demais escurecem,
+   formando o rastro do carregamento do Windows. */
+@keyframes bootDotFade {
+  0%   { opacity: 0.16; }
+  12%  { opacity: 1; }
+  100% { opacity: 0.16; }
+}
+
+/* Com "reduzir movimento" a animação é desligada pela base; sem isto os
+   pontos ficariam congelados no frame final (opacidade 0,16) e quase sumiriam. */
+@media (prefers-reduced-motion: reduce) {
+  .boot__dot {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
+/* Durante o encerramento o anel fica todo aceso e dissolve. */
+.boot.is-complete .boot__dot,
+.boot.is-leaving .boot__dot {
+  /* animation:none (e não play-state:paused) para o opacity declarado valer:
+     com a animação pausada, cada ponto ficaria congelado na opacidade da vez. */
+  animation: none;
+  opacity: 0.95;
+  transition: opacity 420ms var(--ease-out);
+}
+
+.boot.is-leaving .boot__dot {
+  opacity: 0;
 }
 
 /* -------------------------------------------------------------- status --- */
@@ -132,7 +187,9 @@
   bottom: clamp(14px, 2.6vmin, 30px);
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 8px;
+  white-space: nowrap;
   opacity: 0;
   translate: 0 6px;
   transition: opacity 900ms var(--ease-out) 900ms, translate 900ms var(--ease-out) 900ms;
@@ -151,6 +208,8 @@
   height: 30px;
   padding: 0 12px;
   border-radius: 999px;
+  white-space: nowrap;
+  flex: 0 0 auto;
   border: 1px solid var(--lunar-line);
   background: rgba(255, 255, 255, 0.03);
   color: var(--lunar-text-faint);
@@ -236,16 +295,55 @@
   }
 }
 
-@media (max-height: 560px) {
+/* Telas baixas: encolhe tudo junto, proporcionalmente, para a composição
+   nunca parecer uma miniatura perdida nem estourar a altura. */
+@media (max-height: 620px) {
   .boot__stage {
-    gap: 22px;
+    gap: clamp(22px, 4.5vmin, 34px);
   }
 
   .boot__logo {
-    width: clamp(96px, 18vmin, 150px);
+    width: clamp(112px, 22vmin, 168px);
   }
 
-  .boot__spinner {
-    width: 76px;
+  .boot__dots {
+    --dot-size: clamp(6px, 1.5vmin, 9px);
+    --ring-size: clamp(50px, 12vmin, 66px);
+  }
+}
+
+@media (max-height: 460px) {
+  .boot__stage {
+    gap: 20px;
+  }
+
+  .boot__logo {
+    width: clamp(92px, 18vmin, 128px);
+  }
+
+  .boot__dots {
+    --dot-size: clamp(5px, 1.6vmin, 7px);
+    --ring-size: clamp(42px, 12vmin, 54px);
+  }
+
+  .boot__status {
+    font-size: 0.6875rem;
+  }
+}
+
+/* Telas muito estreitas (celular retrato): o ícone não pode competir com a
+   largura, então acompanhamos a largura em vez do vmin. */
+@media (max-width: 480px) {
+  .boot__stage {
+    gap: 26px;
+  }
+
+  .boot__logo {
+    width: clamp(112px, 34vw, 168px);
+  }
+
+  .boot__dots {
+    --dot-size: clamp(6px, 2vw, 9px);
+    --ring-size: clamp(52px, 17vw, 70px);
   }
 }

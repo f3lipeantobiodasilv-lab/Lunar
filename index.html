@@ -13,16 +13,16 @@
   <link rel="preload" href="fonts/plus-jakarta-sans-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="assets/lunar-boot.png" as="image" type="image/png" />
 
-  <link rel="stylesheet" href="src/css/fonts.css?v=0.1.2" />
-  <link rel="stylesheet" href="src/css/base.css?v=0.1.2" />
-  <link rel="stylesheet" href="src/css/boot.css?v=0.1.2" />
-  <link rel="stylesheet" href="src/css/desktop.css?v=0.1.2" />
+  <link rel="stylesheet" href="src/css/fonts.css?v=0.1.3" />
+  <link rel="stylesheet" href="src/css/base.css?v=0.1.3" />
+  <link rel="stylesheet" href="src/css/boot.css?v=0.1.3" />
+  <link rel="stylesheet" href="src/css/desktop.css?v=0.1.3" />
 
   <script>
     // Troca a flag antes da primeira pintura para evitar flash de conteúdo sem JS.
     document.documentElement.classList.replace('no-js', 'js');
   </script>
-  <script type="module" src="src/js/main.js?v=0.1.2"></script>
+  <script type="module" src="src/js/main.js?v=0.1.3"></script>
 </head>
 
 <body class="is-booting">
@@ -44,9 +44,20 @@
         decoding="async"
       />
 
-      <!-- Bolinhas girando (canvas procedural), no lugar da barra de progresso -->
+      <!-- Bolinhas girando: 8 pontos em CSS puro (sem canvas, sem imagem).
+           --i posiciona cada ponto no anel; a animação roda no compositor,
+           então funciona mesmo com aceleração de canvas indisponível. -->
       <div class="boot__loader">
-        <canvas id="boot-spinner" class="boot__spinner" aria-hidden="true"></canvas>
+        <div class="boot__dots" id="boot-dots" aria-hidden="true">
+          <span class="boot__dot" style="--i: 0"></span>
+          <span class="boot__dot" style="--i: 1"></span>
+          <span class="boot__dot" style="--i: 2"></span>
+          <span class="boot__dot" style="--i: 3"></span>
+          <span class="boot__dot" style="--i: 4"></span>
+          <span class="boot__dot" style="--i: 5"></span>
+          <span class="boot__dot" style="--i: 6"></span>
+          <span class="boot__dot" style="--i: 7"></span>
+        </div>
         <p class="boot__status" id="boot-status" role="status" aria-live="polite">Iniciando</p>
       </div>
     </div>
@@ -59,7 +70,7 @@
       <button class="boot__skip" id="boot-skip" type="button">Pular</button>
     </div>
 
-    <p class="boot__build">lunar os · demo 0.1.2 · fase 1/3</p>
+    <p class="boot__build">lunar os · demo 0.1.3 · fase 1/3</p>
   </section>
 
   <!-- ======================================================================

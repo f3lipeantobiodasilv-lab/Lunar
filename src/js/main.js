@@ -9,7 +9,7 @@ import { audio } from './core/audio.js';
 
 // Identificador de build: se o console não mostrar esta linha, o navegador
 // está servindo uma versão em cache.
-const BUILD = '0.1.2';
+const BUILD = '0.1.3';
 console.info(`Lunar OS · build ${BUILD}`);
 
 const desktop = document.getElementById('desktop');

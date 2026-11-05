@@ -4,9 +4,9 @@ Web OS construído em fases. Esta entrega contém a **Fase 1: tela de boot e ini
 
 ![Fluxo de boot](docs/boot-preview.png)
 
-> **Cache:** o servidor envia `Cache-Control: no-store` e o HTML referencia CSS/JS com `?v=0.1.2`.
+> **Cache:** o servidor envia `Cache-Control: no-store` e o HTML referencia CSS/JS com `?v=0.1.3`.
 > Se a tela ainda parecer antiga, faça um hard reload (`Ctrl+Shift+R`) — o console deve imprimir
-> `Lunar OS · build 0.1.2` e o rodapé mostra `demo 0.1.2`.
+> `Lunar OS · build 0.1.3` e o rodapé mostra `demo 0.1.3`.
 
 ---
 
@@ -30,23 +30,35 @@ Não há dependências: `server.mjs` é um servidor estático de ~70 linhas, esc
 | --- | --- |
 | Fundo preto absoluto | `background-color: #000` em `.boot` (sem gradiente, aura ou grão) |
 | Apenas o ícone, centralizado, com fade-in | `.boot__logo` — fade de 1,6 s + micro-escala, orquestrado pela classe `.is-entered` |
-| Bolinhas girando (padrão Windows) no lugar da barra | `src/js/boot/spinner-dots.js` |
+| Bolinhas girando (padrão Windows) no lugar da barra | `.boot__dots` em `src/css/boot.css` (CSS puro, 8 pontos) |
 | Som de boot em Web Audio API | `AudioEngine.playBootSequence()` em `src/js/core/audio.js` |
 | Fade-out elegante para o desktop | `.boot.is-leaving` → `.boot.is-gone`, com `.desktop.is-visible` entrando junto |
 | Fonte Plus Jakarta Sans | `src/css/fonts.css` (arquivos `.woff2` locais, SIL OFL) |
 
 ### As bolinhas girando
 
-Desenhadas proceduralmente na Canvas API — nenhum SVG, nenhum GIF:
+Implementadas em **CSS puro**, sem canvas e sem imagem:
 
-1. **Anel inclinado**: 8 pontos distribuídos num círculo achatado (`tilt: 0.62`), o que dá a sensação de um globo girando em vez de um disco chapado.
-2. **Cabeça e cauda**: o ponto que lidera é o maior e mais claro; os seguintes reduzem de tamanho e desbotam (`pow(head, 1.7)`), reproduzindo o rastro do carregamento do Windows.
-3. **Profundidade**: pontos na metade da frente do ciclo ficam maiores e mais opacos — o giro parece ter perspectiva.
-4. **Fechamento**: ao terminar, o anel desacelera, achata-se até virar círculo, acende e dissolve — em vez de simplesmente desaparecer.
+1. **Anel**: 8 `<span>` posicionados por `--i` (`rotate(45deg * i) translateY(-ring/2)`).
+2. **Cauda**: todos rodam o mesmo keyframe de opacidade (`0,16 → 1 → 0,16`), defasado em `-0,14s` por ponto — o resultado é o rastro do carregamento do Windows.
+3. **Encerramento**: ao terminar, a animação é trocada por `animation: none` e o anel inteiro acende antes de dissolver junto com o fade-out.
 
-Custo por frame: 8 chamadas de `arc`. Sem blur, sombra ou gradiente por ponto. O canvas é redimensionado por `devicePixelRatio` (limitado a 2) e o loop pausa quando a aba fica oculta.
+Por que CSS e não canvas: a primeira versão desenhava os pontos numa Canvas 2D. Em navegadores com aceleração de canvas indisponível (driver de vídeo, política de GPU), o canvas ocupava o layout mas não pintava nada — as bolinhas simplesmente não apareciam. Como `transform` e `opacity` rodam no compositor, a versão em CSS não tem essa dependência: foi verificada com `--disable-gpu --disable-accelerated-2d-canvas --disable-software-rasterizer` e renderiza igual.
 
-O progresso interno (0 → 1) continua existindo, mas agora só alimenta a mensagem de status — *Iniciando*, *Carregando recursos*, *Preparando a área de trabalho*, *Quase lá*. Não há barra nem percentual na tela.
+Com `prefers-reduced-motion` a animação é desligada pela regra global, então os pontos recebem `opacity: 0.85` fixo para não congelarem no frame invisível.
+
+### Responsividade
+
+A composição escala em quatro faixas, sempre centralizada e sem sobreposição entre ícone, anel e texto:
+
+| Faixa | Ícone | Anel | Bolinha |
+| --- | --- | --- | --- |
+| Padrão (≥ 620px de altura) | `clamp(164px, 27vmin, 252px)` | `clamp(64px, 9.5vmin, 92px)` | até 12px |
+| Altura ≤ 620px | `clamp(112px, 22vmin, 168px)` | `clamp(50px, 12vmin, 66px)` | até 9px |
+| Altura ≤ 460px | `clamp(92px, 18vmin, 128px)` | `clamp(42px, 12vmin, 54px)` | até 7px |
+| Largura ≤ 480px | `clamp(112px, 34vw, 168px)` | `clamp(52px, 17vw, 70px)` | até 9px |
+
+Validado em Chromium real nas resoluções 1920×1080, 1440×900, 1280×720, 753×618, 717×442, 1024×400, 390×844 e 360×640: em todas o conteúdo cabe na viewport sem sobrepor e os controles ficam em uma única linha (em telas estreitas o "Som" vira rótulo curto, com o texto completo em `aria-label`).
 
 ### O som de boot
 
@@ -87,7 +99,6 @@ src/js/
   main.js                  # ponto de entrada
   core/ease.js             # curvas e PRNG determinístico
   core/audio.js            # motor de áudio sintetizado
-  boot/spinner-dots.js     # bolinhas girando (canvas)
   boot/boot.js             # controlador da sequência de boot
 ```
 
@@ -97,7 +108,7 @@ src/js/
 
 ## Regras do projeto respeitadas
 
-- **Apenas duas imagens reais** (`assets/lunar-boot.png`, `assets/lunar-logo.png`). Papel de parede, bolinhas do carregamento e todos os efeitos são gerados em runtime.
+- **Apenas duas imagens reais** (`assets/lunar-boot.png`, `assets/lunar-logo.png`). Papel de parede e demais efeitos são gerados em runtime; as bolinhas do carregamento são CSS puro.
 - **Nenhum arquivo de áudio.** Todo som vem de osciladores e buffers da Web Audio API.
 - **Nenhuma persistência.** Não há `localStorage`, cookies, IndexedDB ou escrita em disco; todo estado vive em memória. A convenção de `tmp/` está documentada no `.gitignore` para as próximas fases.
 - **Tipografia**: Plus Jakarta Sans, com fallback para a pilha do sistema.

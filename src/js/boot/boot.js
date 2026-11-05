@@ -13,7 +13,6 @@
  * estados de texto, mas não há mais barra, percentual nem lua desenhada.
  */
 
-import { SpinnerDots } from './spinner-dots.js';
 import { audio } from '../core/audio.js';
 import { clamp, prefersReducedMotion, smoothstep } from '../core/ease.js';
 
@@ -63,14 +62,12 @@ export class BootSequence {
 
     this.el = document.getElementById('boot');
     this.logo = document.getElementById('boot-logo');
-    this.spinnerCanvas = document.getElementById('boot-spinner');
+    this.dots = document.getElementById('boot-dots');
     this.statusEl = document.getElementById('boot-status');
     this.skipBtn = document.getElementById('boot-skip');
     this.soundBtn = document.getElementById('boot-sound');
     this.soundLabel = document.getElementById('boot-sound-label');
     this.desktop = document.getElementById('desktop');
-
-    this.spinner = this.spinnerCanvas ? new SpinnerDots(this.spinnerCanvas) : null;
 
     this.state = 'idle'; // idle | running | completing | revealing | done
     this._revealTimer = null;
@@ -121,8 +118,7 @@ export class BootSequence {
     this.desktop?.setAttribute('aria-hidden', 'true');
 
     this.setStatus(STEPS[0].label);
-    this.spinner?.reset();
-    this.spinner?.start();
+    this._setDotsPaused(false);
 
     // O texto de status só avança quando os recursos estiverem prontos.
     this._waitForAssets();
@@ -156,15 +152,15 @@ export class BootSequence {
     // Pausa a animação quando a aba fica oculta (economia real de bateria).
     document.addEventListener('visibilitychange', () => {
       if (this.state !== 'running' && this.state !== 'completing') return;
-      if (document.hidden) {
-        this.spinner?.stop();
-      } else {
-        this.spinner?.start();
-      }
+      this._setDotsPaused(document.hidden);
     });
 
     audio.armUnlockOnFirstGesture();
     this._syncSoundButton();
+
+    // Mantém o rótulo do botão coerente: o contexto pode destravar em um gesto
+    // fora da tela de boot ou por política de autoplay do navegador.
+    audio.ctx?.addEventListener?.('statechange', () => this._syncSoundButton());
   }
 
   /** Espera fonte, ícone e um frame — para encerrar só quando estiver tudo lá. */
@@ -239,8 +235,8 @@ export class BootSequence {
 
     this.el.classList.add('is-complete');
     this.setStatus('Pronto');
-    // Fecha o anel de bolinhas e desacelera até parar.
-    this.spinner?.complete();
+    // Acende o anel inteiro; a dissolução acompanha o fade-out (.is-leaving).
+    this._setDotsPaused(true);
 
     await this._playBootSound();
     if (this.state !== 'completing') return; // pode ter sido pulado/reiniciado
@@ -264,6 +260,7 @@ export class BootSequence {
       const played = await audio.playBootSequence();
       if (this.state !== 'completing') return;
       if (played) {
+        this._syncSoundButton();
         this.setStatus('Reproduzindo assinatura sonora');
         await wait(this.reduceMotion ? 600 : this._timings.settle);
         return;
@@ -284,6 +281,7 @@ export class BootSequence {
       const played = await audio.playBootSequence();
       if (this.state !== 'completing') return;
       if (played) {
+        this._syncSoundButton();
         this.setStatus('Reproduzindo assinatura sonora');
         await wait(this.reduceMotion ? 600 : this._timings.settle);
         return;
@@ -335,7 +333,6 @@ export class BootSequence {
       if (this.state !== 'revealing') return;
       this.el.classList.add('is-gone');
       this.el.setAttribute('aria-hidden', 'true');
-      this.spinner?.stop();
       document.body.classList.remove('is-booting');
       this.state = 'done';
       this.onReveal();
@@ -376,7 +373,15 @@ export class BootSequence {
   destroy() {
     clearTimeout(this._revealTimer);
     if (this._progressRaf) cancelAnimationFrame(this._progressRaf);
-    this.spinner?.destroy();
+  }
+
+  /** Congela/retoma a animação das bolinhas (aba oculta ou fim do boot). */
+  _setDotsPaused(paused) {
+    if (!this.dots) return;
+    this.dots.style.animationPlayState = paused ? 'paused' : '';
+    for (const dot of this.dots.children) {
+      dot.style.animationPlayState = paused ? 'paused' : '';
+    }
   }
 
   // -------------------------------------------------------------- helpers ---
@@ -396,12 +401,22 @@ export class BootSequence {
           : 'pending';
 
     this.soundBtn.dataset.state = state;
-    const labels = {
+
+    // Em telas estreitas o rótulo completo quebra em três linhas; usamos uma
+    // versão curta e mantemos o texto completo em aria-label/title.
+    const compact = window.matchMedia('(max-width: 560px)').matches;
+    const full = {
       on: 'Som: ativado',
       off: 'Som: desativado',
       pending: 'Som: aguardando gesto',
     };
-    if (this.soundLabel) this.soundLabel.textContent = labels[state];
+    const short = { on: 'Som', off: 'Som', pending: 'Som' };
+
+    if (this.soundLabel) {
+      this.soundLabel.textContent = compact ? short[state] : full[state];
+    }
+    this.soundBtn.setAttribute('aria-label', full[state]);
+    this.soundBtn.setAttribute('title', full[state]);
     this.soundBtn.setAttribute('aria-pressed', state === 'on' ? 'true' : 'false');
   }
 }
