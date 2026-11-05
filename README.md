@@ -4,6 +4,10 @@ Web OS construído em fases. Esta entrega contém a **Fase 1: tela de boot e ini
 
 ![Fluxo de boot](docs/boot-preview.png)
 
+> **Cache:** o servidor envia `Cache-Control: no-store` e o HTML referencia CSS/JS com `?v=0.1.2`.
+> Se a tela ainda parecer antiga, faça um hard reload (`Ctrl+Shift+R`) — o console deve imprimir
+> `Lunar OS · build 0.1.2` e o rodapé mostra `demo 0.1.2`.
+
 ---
 
 ## Rodar

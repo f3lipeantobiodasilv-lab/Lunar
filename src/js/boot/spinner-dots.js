@@ -25,7 +25,7 @@ const DEFAULTS = {
   // Inclinação do plano do anel: 1 = círculo perfeito, <1 = elipse achatada.
   tilt: 0.62,
   // Raio do anel em fração do menor lado do canvas.
-  radius: 0.335,
+  radius: 0.34,
   color: '255, 255, 255',
 };
 
@@ -157,7 +157,7 @@ export class SpinnerDots {
     const cx = w / 2;
     const cy = h / 2;
     const ringRadius = Math.min(w, h) * radius;
-    const baseDot = Math.max(1.8, Math.min(w, h) * 0.077);
+    const baseDot = Math.max(2, Math.min(w, h) * 0.086);
 
     // Fechamento: no fim do carregamento o anel desacelera, os pontos se
     // aproximam do círculo e a opacidade final dissolve tudo junto.

@@ -54,10 +54,14 @@ const server = http.createServer((req, res) => {
     }
 
     const ext = path.extname(filePath).toLowerCase();
+    // no-store: durante o desenvolvimento o navegador não pode reaproveitar
+    // CSS/JS antigos e mostrar uma versão velha da interface.
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
       'Content-Length': stat.size,
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-store, must-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
     });
 
     if (req.method === 'HEAD') {
