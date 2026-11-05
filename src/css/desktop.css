@@ -1,7 +1,13 @@
 /* ============================================================================
-   Lunar OS — área de trabalho
-   Fase 1: apenas o "palco" vazio que o boot revela.
-   Fase 2 assume o papel de parede (Canvas), a barra de tarefas e o Iniciar.
+   Lunar OS — área de trabalho (Fase 2)
+   ----------------------------------------------------------------------------
+   Três camadas empilhadas, de trás para a frente:
+
+     1. .desktop__wallpaper  — Canvas 2D procedural (wallpaper.js)
+     2. .desktop__vignette   — vinheta + escurecimento de rodapé (CSS puro)
+     3. .desktop__icons      — atalhos, em grade vertical
+
+   A barra de tarefas e o menu Iniciar ficam em taskbar.css.
    ========================================================================= */
 
 .desktop {
@@ -9,16 +15,17 @@
   inset: 0;
   z-index: var(--z-desktop);
   display: grid;
-  place-items: center;
-  /* Respiro seguro para notch/barra de gestos; o padding também é a área de
-     folga do cartão em telas baixas. */
+  /* Linha 1 = superfície (ícones), linha 2 = barra de tarefas. */
+  grid-template-rows: 1fr auto;
+  /* Respiro para notch/barra de gestos. A barra herda esse recuo. */
   padding:
-    max(12px, env(safe-area-inset-top))
-    max(12px, env(safe-area-inset-right))
-    max(12px, env(safe-area-inset-bottom))
-    max(12px, env(safe-area-inset-left));
+    max(0px, env(safe-area-inset-top))
+    max(0px, env(safe-area-inset-right))
+    max(0px, env(safe-area-inset-bottom))
+    max(0px, env(safe-area-inset-left));
   overflow: hidden;
   isolation: isolate;
+  /* Base visível enquanto o canvas não pintou (e no fallback sem JS). */
   background:
     radial-gradient(90% 70% at 22% 10%, rgba(48, 54, 92, 0.5) 0%, transparent 60%),
     radial-gradient(80% 70% at 84% 92%, rgba(24, 60, 74, 0.42) 0%, transparent 62%),
@@ -27,10 +34,17 @@
   scale: 1.015;
   filter: blur(8px);
   pointer-events: none;
+
+  /* `visibility: hidden` (com atraso) tira a barra e o menu da ordem de tabulação
+     enquanto o desktop está fora do ar — `opacity: 0` sozinho deixaria os
+     botões alcançáveis por Tab durante o boot. O atraso garante que o fade de
+     saída (900 ms) aconteça antes de a camada desaparecer de vez. */
+  visibility: hidden;
   transition:
     opacity 900ms var(--ease-out),
     scale 1200ms var(--ease-out),
-    filter 900ms var(--ease-out);
+    filter 900ms var(--ease-out),
+    visibility 0ms linear 900ms;
 }
 
 .desktop.is-visible {
@@ -38,121 +52,398 @@
   scale: 1;
   filter: blur(0);
   pointer-events: auto;
+  visibility: visible;
+  transition:
+    opacity 900ms var(--ease-out),
+    scale 1200ms var(--ease-out),
+    filter 900ms var(--ease-out),
+    visibility 0ms linear 0ms;
 }
 
-/* Escurecimento local atrás do conteúdo — sai na Fase 2 */
-.desktop__scrim {
+/* ------------------------------------------------------------ papel de parede */
+
+.desktop__wallpaper {
   position: absolute;
   inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  /* O canvas é desenhado em DPR; o CSS devolve o tamanho em px lógicos. */
+  object-fit: cover;
   pointer-events: none;
-  background: radial-gradient(58% 52% at 50% 46%, rgba(9, 9, 11, 0.82) 0%, rgba(9, 9, 11, 0.25) 58%, transparent 78%);
+  user-select: none;
 }
 
-/* -------------------------------------------------- placeholder da fase 1 - */
-.desktop__placeholder {
-  position: relative;
+/* Vinheta: escurece as bordas e o rodapé para o texto nunca ficar sobre uma
+   estrela ou sobre o halo da lua. Custa um paint único, nada por quadro. */
+.desktop__vignette {
+  position: absolute;
+  inset: 0;
   z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(to top, rgba(6, 6, 10, 0.62) 0%, rgba(6, 6, 10, 0.12) 26%, transparent 44%),
+    radial-gradient(120% 90% at 50% 40%, transparent 42%, rgba(6, 6, 10, 0.55) 100%);
+}
+
+/* --------------------------------------------------------------- superfície - */
+
+.desktop__icons {
+  /* Colunas de cima para baixo, depois para a direita — como um desktop real.
+     `auto-fill` com linhas fixas garante que nada vaze por baixo da barra. */
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(auto-fill, var(--icon-cell, 96px));
+  justify-content: start;
+  align-content: start;
+  gap: 4px;
+  height: 100%;
+  margin: 0;
+  padding: clamp(12px, 2.4vmin, 24px);
+  list-style: none;
+  overflow: hidden;
+}
+
+.desktop__icons-item {
+  display: flex;
+}
+
+.desktop-icon {
+  /* Referência para o badge de fase (position: absolute). */
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(10px, 1.8vmin, 18px);
-  max-width: 540px;
-  /* O cartão nunca pode ser mais alto que a viewport: em 1024×400 ou 717×442
-     ele era cortado pelo `overflow: hidden` do .desktop e o usuário perdia os
-     botões inferiores. Com max-height + rolagem interna, o conteúdo continua
-     alcançável em qualquer tela. */
-  max-height: 100%;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  text-align: center;
-  padding: clamp(16px, 3.4vmin, 40px);
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: linear-gradient(180deg, rgba(22, 22, 30, 0.6) 0%, rgba(14, 14, 19, 0.45) 100%);
-  backdrop-filter: blur(18px) saturate(120%);
-  -webkit-backdrop-filter: blur(18px) saturate(120%);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.06) inset,
-    0 30px 80px -30px rgba(0, 0, 0, 0.9);
-}
-
-.desktop__placeholder-logo {
-  width: clamp(96px, 13vmin, 132px);
-  height: auto;
-  opacity: 0.95;
-  filter: drop-shadow(0 0 30px rgba(163, 176, 255, 0.22));
-}
-
-.desktop__title {
-  font-size: clamp(1.9rem, 4.6vmin, 2.6rem);
-  font-weight: 200;
-  letter-spacing: 0.16em;
-  text-indent: 0.16em;
-  text-transform: uppercase;
-  line-height: 1.05;
-  background: linear-gradient(180deg, #ffffff 0%, #b9bed6 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.desktop__lede {
-  max-width: 40ch;
-  font-size: 0.875rem;
+  justify-content: flex-start;
+  gap: 6px;
+  width: var(--icon-cell, 96px);
+  padding: 8px 4px;
+  border: 1px solid transparent;
+  border-radius: 12px;
   color: var(--lunar-text-dim);
-  text-wrap: balance;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  text-align: center;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.85);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
-.desktop__next {
+.desktop-icon:hover,
+.desktop-icon:focus-visible {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--lunar-line);
+  color: var(--lunar-text);
+}
+
+.desktop-icon:active {
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.desktop-icon__glyph {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(180deg, var(--tone-a, rgba(139, 149, 255, 0.9)) 0%, var(--tone-b, rgba(79, 91, 213, 0.9)) 100%);
+  color: #101018;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.28) inset,
+    0 10px 24px -12px rgba(0, 0, 0, 0.9);
+}
+
+.desktop-icon__glyph svg {
+  width: 24px;
+  height: 24px;
+}
+
+.desktop-icon__name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* App que só abre na fase seguinte: ícone esmaecido, mas ainda clicável —
+   clicar explica por quê, em vez de ignorar o toque. */
+.desktop-icon[data-soon="true"] .desktop-icon__glyph {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--lunar-line);
+  color: var(--lunar-text-dim);
+  box-shadow: none;
+}
+
+.desktop-icon__badge {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(9, 9, 11, 0.9);
+  border: 1px solid var(--lunar-line);
+  color: var(--lunar-text-faint);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-shadow: none;
+}
+
+/* --------------------------------------------------------------- avisos ---- */
+
+.toasts {
+  position: absolute;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: calc(var(--taskbar-h, 58px) + 22px);
+  z-index: var(--z-toast);
   display: grid;
   gap: 8px;
-  width: 100%;
-  padding: 0;
-  margin: 2px 0 4px;
-  list-style: none;
-  text-align: left;
+  justify-items: end;
+  width: min(320px, calc(100% - 24px));
+  pointer-events: none;
 }
 
-.desktop__next li {
+.toast {
   display: flex;
-  gap: 12px;
-  align-items: baseline;
+  gap: 10px;
+  align-items: flex-start;
+  max-width: 100%;
   padding: 10px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.025);
-  font-size: 0.78125rem;
-  color: var(--lunar-text-faint);
-  line-height: 1.45;
+  border: 1px solid var(--lunar-line);
+  background: rgba(18, 18, 24, 0.86);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.95);
+  font-size: 0.8125rem;
+  color: var(--lunar-text-dim);
+  animation: toast-in 260ms var(--ease-out) both;
 }
 
-.desktop__next li span {
+.toast.is-leaving {
+  animation: toast-out 220ms var(--ease-in) both;
+}
+
+.toast__glyph {
+  display: grid;
+  place-items: center;
   flex: 0 0 auto;
-  padding: 2px 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, var(--tone-a, #8b95ff) 0%, var(--tone-b, #4f5bd5) 100%);
+  color: #0b0b10;
+}
+
+.toast__glyph svg {
+  width: 14px;
+  height: 14px;
+}
+
+.toast__text {
+  min-width: 0;
+}
+
+.toast__title {
+  display: block;
+  color: var(--lunar-text);
+  font-weight: 600;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(6px) scale(0.98); }
+}
+
+/* ------------------------------------------------- painel "Sobre o Lunar" -- */
+
+.sheet {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-sheet);
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) 16px;
+}
+
+.sheet[hidden] {
+  display: none;
+}
+
+.sheet__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 6, 10, 0.62);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: sheet-fade 200ms var(--ease-out) both;
+}
+
+.sheet__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-height: 100%;
+  border-radius: 20px;
+  border: 1px solid var(--lunar-line-strong);
+  background: linear-gradient(180deg, rgba(24, 24, 32, 0.94) 0%, rgba(15, 15, 20, 0.94) 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.07) inset,
+    0 40px 90px -40px rgba(0, 0, 0, 1);
+  overflow: hidden;
+  animation: sheet-rise 260ms var(--ease-out) both;
+}
+
+.sheet__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--lunar-line);
+}
+
+.sheet__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  border: 1px solid var(--lunar-line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--lunar-glow);
+}
+
+.sheet__icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.sheet__title {
+  flex: 1 1 auto;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.sheet__close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  color: var(--lunar-text-dim);
+  font-size: 1.25rem;
+  line-height: 1;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.sheet__close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--lunar-text);
+}
+
+.sheet__body {
+  padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  gap: 14px;
+  font-size: 0.8125rem;
+  color: var(--lunar-text-dim);
+  line-height: 1.6;
+}
+
+.sheet__body h3 {
+  margin: 4px 0 2px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lunar-text-faint);
+}
+
+.sheet__body p {
+  text-wrap: pretty;
+}
+
+.sheet__body ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sheet__row {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.sheet__row dt {
+  color: var(--lunar-text-faint);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sheet__row dd {
+  margin: 0;
+  color: var(--lunar-text);
+}
+
+.sheet__phases li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.sheet__phases b {
+  flex: 0 0 auto;
+  padding: 2px 7px;
   border-radius: 999px;
-  background: rgba(139, 149, 255, 0.14);
+  background: rgba(139, 149, 255, 0.16);
   color: #c3c9ff;
   font-size: 0.625rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
-.desktop__actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 4px;
+.sheet__phases .is-current {
+  background: rgba(110, 231, 240, 0.16);
+  color: #b6f2f8;
 }
+
+@keyframes sheet-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes sheet-rise {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ------------------------------------------------------------ sem JS ------ */
 
 .desktop__noscript {
   position: absolute;
-  bottom: 24px;
+  bottom: calc(var(--taskbar-h, 58px) + 24px);
   left: 50%;
   translate: -50% 0;
-  z-index: 2;
+  z-index: var(--z-toast);
   padding: 12px 18px;
   border-radius: 12px;
   border: 1px solid var(--lunar-line-strong);
@@ -161,87 +452,83 @@
   color: var(--lunar-text-dim);
 }
 
-/* --------------------------------------------------------- adaptação ----- */
+/* ------------------------------------------------------------ adaptação --- */
 
-/* Telas baixas (celular deitado, notebook 1366×768 com barra, janela pequena):
-   o cartão encolhe em tudo — logo, título, espaçamento — para caber inteiro
-   sem rolagem. */
+/* Telas baixas: células de ícone menores para caber mais de uma coluna. */
 @media (max-height: 620px) {
-  .desktop__placeholder {
-    gap: 10px;
-    padding: 16px clamp(14px, 3vmin, 24px);
+  .desktop__icons {
+    --icon-cell: 82px;
+    grid-template-rows: repeat(auto-fill, var(--icon-cell));
   }
 
-  .desktop__placeholder-logo {
-    width: clamp(56px, 11vmin, 84px);
+  .desktop-icon__glyph {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
   }
 
-  .desktop__lede {
-    font-size: 0.8125rem;
-  }
-
-  .desktop__next {
-    gap: 6px;
-  }
-
-  .desktop__next li {
-    padding: 7px 11px;
-    font-size: 0.71875rem;
+  .desktop-icon__glyph svg {
+    width: 20px;
+    height: 20px;
   }
 }
 
 @media (max-height: 460px) {
-  .desktop__placeholder {
-    gap: 8px;
-    padding: 12px 14px;
-    border-radius: 18px;
+  .desktop__icons {
+    --icon-cell: 64px;
+    padding: 8px;
   }
 
-  .desktop__placeholder-logo {
-    width: 48px;
+  .desktop-icon {
+    font-size: 0.6875rem;
+    padding: 4px 2px;
   }
 
-  .desktop__title {
-    font-size: 1.25rem;
+  .desktop-icon__glyph {
+    width: 30px;
+    height: 30px;
   }
 
-  /* Em tela dividida o cartão vira uma faixa: o texto explicativo sai e ficam
-     as ações, que é o que o usuário precisa alcançar. */
-  .desktop__next {
-    display: none;
-  }
-
-  .desktop__actions {
-    margin-top: 0;
+  .desktop-icon__glyph svg {
+    width: 16px;
+    height: 16px;
   }
 }
 
-/* Celular em retrato: cartão de largura total, controles empilhados só se
-   realmente não couberem lado a lado. */
+/* Celular em retrato: os avisos ocupam a largura toda acima da barra. */
 @media (max-width: 520px) {
-  .desktop {
-    align-items: center;
+  .desktop__icons {
+    --icon-cell: 88px;
+    gap: 2px;
   }
 
-  .desktop__placeholder {
-    width: 100%;
-    gap: 12px;
-    padding: 20px 16px;
-    border-radius: 20px;
-  }
-
-  .desktop__next li {
-    font-size: 0.75rem;
-  }
-
-  .desktop__actions .ui-button {
-    flex: 1 1 140px;
+  .toasts {
+    left: max(12px, env(safe-area-inset-left));
+    width: auto;
   }
 }
 
-/* Alvo de toque confortável (44px) somente em dispositivos de toque. */
-@media (hover: none), (pointer: coarse) {
-  .ui-button {
-    min-height: 44px;
+/* Sem suporte a backdrop-filter, o vidro vira superfície opaca — melhor
+   legível do que um borrão que não existe. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .toast {
+    background: rgba(18, 18, 24, 0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* A regra global de `base.css` já zera as durações; aqui o que importa é
+     zerar também o ATRASO do `visibility` — sem isso a camada continuaria
+     "visível" (embora transparente) por 900 ms depois de esconder. */
+  .desktop,
+  .desktop.is-visible {
+    transition-delay: 0ms !important;
+  }
+
+  .toast,
+  .toast.is-leaving,
+  .sheet__backdrop,
+  .sheet__panel {
+    animation-duration: 1ms;
   }
 }

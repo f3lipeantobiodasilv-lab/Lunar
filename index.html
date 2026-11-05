@@ -6,17 +6,18 @@
   <meta name="color-scheme" content="dark" />
   <meta name="theme-color" content="#09090b" />
   <title>Lunar OS — Inicialização</title>
-  <meta name="description" content="Lunar OS — demo de Web OS. Fase 1: tela de boot com bolinhas em CSS puro e som sintetizado." />
+  <meta name="description" content="Lunar OS — demo de Web OS. Fase 2: papel de parede procedural em Canvas, barra de tarefas com vidro fosco e menu Iniciar." />
 
   <!-- Tipografia: Plus Jakarta Sans (SIL OFL). Arquivos auto-hospedados para o boot não depender de rede. -->
   <link rel="preload" href="fonts/plus-jakarta-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="fonts/plus-jakarta-sans-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="assets/lunar-boot.png" as="image" type="image/png" />
 
-  <link rel="stylesheet" href="src/css/fonts.css?v=0.2.5" />
-  <link rel="stylesheet" href="src/css/base.css?v=0.2.5" />
-  <link rel="stylesheet" href="src/css/boot.css?v=0.2.5" />
-  <link rel="stylesheet" href="src/css/desktop.css?v=0.2.5" />
+  <link rel="stylesheet" href="src/css/fonts.css?v=0.3.0" />
+  <link rel="stylesheet" href="src/css/base.css?v=0.3.0" />
+  <link rel="stylesheet" href="src/css/boot.css?v=0.3.0" />
+  <link rel="stylesheet" href="src/css/desktop.css?v=0.3.0" />
+  <link rel="stylesheet" href="src/css/taskbar.css?v=0.3.0" />
 
   <script>
     // Troca a flag antes da primeira pintura para evitar flash de conteúdo sem JS.
@@ -82,7 +83,7 @@
       window.setTimeout(bailOut, LIMIT_MS * 2);
     })();
   </script>
-  <script type="module" src="src/js/main.js?v=0.2.5"></script>
+  <script type="module" src="src/js/main.js?v=0.3.0"></script>
 </head>
 
 <body class="is-booting">
@@ -123,7 +124,7 @@
     </div>
 
     <div class="boot__foot">
-      <p class="boot__build">lunar os · demo 0.2.5 · fase 1/3</p>
+      <p class="boot__build">lunar os · demo 0.3.0 · fase 2/3</p>
       <div class="boot__controls">
         <button class="boot__sound" id="boot-sound" type="button" data-state="pending">
           <span class="boot__sound-dot" aria-hidden="true"></span>
@@ -135,24 +136,119 @@
   </section>
 
   <!-- ======================================================================
-       Área de trabalho — placeholder da Fase 1 (recebe as Fases 2 e 3)
+       FASE 2 — Área de trabalho
+
+       O esqueleto (barra, menu, relógio) está no HTML de propósito: se o
+       módulo ES não carregar, a área de trabalho ainda aparece com a barra no
+       lugar em vez de uma tela vazia. O JS só preenche as listas e liga os
+       eventos — é hidratação, não construção.
        ====================================================================== -->
   <main id="desktop" class="desktop" aria-hidden="true" tabindex="-1">
-    <div class="desktop__scrim" aria-hidden="true"></div>
+    <!-- Papel de parede procedural: Canvas 2D desenhado por semente.
+         Nenhum arquivo de imagem novo entra no projeto por causa dele. -->
+    <canvas id="wallpaper" class="desktop__wallpaper" aria-hidden="true"></canvas>
+    <div class="desktop__vignette" aria-hidden="true"></div>
 
-    <div class="desktop__placeholder">
-      <img class="desktop__placeholder-logo" src="assets/lunar-logo.png" alt="" width="1024" height="1024" draggable="false" />
-      <h1 class="desktop__title">Lunar</h1>
-      <p class="desktop__lede">Boot concluído. O ambiente de trabalho entra na Fase&nbsp;2.</p>
+    <!-- Atalhos da área de trabalho (preenchidos pelo desktop.js) -->
+    <ul class="desktop__icons" id="desktop-icons" aria-label="Atalhos da área de trabalho"></ul>
 
-      <ul class="desktop__next">
-        <li><span>Fase 2</span> Papel de parede procedural, barra de tarefas e menu Iniciar</li>
-        <li><span>Fase 3</span> Motor de janelas e terminal com sistema de arquivos em tmp/</li>
-      </ul>
+    <!-- ================================================ menu Iniciar ===== -->
+    <section
+      class="startmenu"
+      id="start-menu"
+      role="dialog"
+      aria-modal="false"
+      aria-label="Menu Iniciar"
+      aria-hidden="true"
+    >
+      <header class="startmenu__head">
+        <form class="startmenu__search" id="start-search-form" role="search" autocomplete="off">
+          <span class="startmenu__search-icon" aria-hidden="true" data-icon="search"></span>
+          <input
+            class="startmenu__search-input"
+            id="start-search"
+            type="search"
+            placeholder="Buscar apps e ações"
+            aria-label="Buscar aplicativos e ações do sistema"
+            enterkeyhint="go"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </form>
+      </header>
 
-      <div class="desktop__actions">
-        <button class="ui-button ui-button--primary" id="replay-boot" type="button">Repetir boot</button>
-        <button class="ui-button" id="desktop-sound" type="button">Testar som do sistema</button>
+      <div class="startmenu__body" id="start-body">
+        <p class="startmenu__section" id="start-section-title">Todos os aplicativos</p>
+        <ul class="startmenu__grid" id="start-grid" role="list"></ul>
+        <p class="startmenu__empty" id="start-empty" hidden>Nada encontrado.</p>
+      </div>
+
+      <footer class="startmenu__foot">
+        <ul class="startmenu__actions" id="start-actions" role="list"></ul>
+        <p class="startmenu__build">lunar os · demo <span id="start-build">0.3.0</span> · fase 2/3</p>
+      </footer>
+    </section>
+
+    <!-- ============================================== barra de tarefas ==== -->
+    <footer class="taskbar" id="taskbar" aria-label="Barra de tarefas">
+      <button
+        class="taskbar__start"
+        id="start-button"
+        type="button"
+        aria-expanded="false"
+        aria-controls="start-menu"
+      >
+        <span class="taskbar__start-icon" aria-hidden="true">
+          <img
+            class="taskbar__start-logo"
+            id="start-logo"
+            src="assets/lunar-logo.png"
+            alt=""
+            width="1024"
+            height="1024"
+            decoding="async"
+            draggable="false"
+          />
+          <span class="taskbar__start-fallback" data-icon="moon"></span>
+        </span>
+        <span class="taskbar__start-label">Iniciar</span>
+      </button>
+
+      <ul class="taskbar__apps" id="taskbar-apps" aria-label="Aplicativos fixados"></ul>
+
+      <button class="taskbar__search" id="search-button" type="button" aria-label="Buscar (abre o menu Iniciar)">
+        <span class="taskbar__search-icon" aria-hidden="true" data-icon="search"></span>
+        <span class="taskbar__search-label">Buscar</span>
+      </button>
+
+      <div class="taskbar__tray">
+        <button class="taskbar__tray-btn" id="tray-sound" type="button" aria-pressed="true">
+          <span class="taskbar__tray-icon" aria-hidden="true" data-icon="volume"></span>
+          <span class="taskbar__tray-label" id="tray-sound-label">Som</span>
+        </button>
+
+        <div class="taskbar__clock" id="taskbar-clock">
+          <time class="taskbar__time" id="clock-time" datetime="">--:--</time>
+          <span class="taskbar__date" id="clock-date">—</span>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Avisos temporários (apps das fases seguintes, ações do sistema) -->
+    <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+    <!-- Painel "Sobre o Lunar" — o único app já aberto pela Fase 2 -->
+    <div class="sheet" id="about-sheet" role="dialog" aria-modal="true" aria-labelledby="about-title" hidden>
+      <div class="sheet__backdrop" data-sheet-close></div>
+      <div class="sheet__panel">
+        <header class="sheet__head">
+          <span class="sheet__icon" aria-hidden="true" data-icon="moon"></span>
+          <h2 class="sheet__title" id="about-title">Sobre o Lunar</h2>
+          <button class="sheet__close" type="button" data-sheet-close aria-label="Fechar">
+            <span aria-hidden="true">×</span>
+          </button>
+        </header>
+        <div class="sheet__body" id="about-body"></div>
       </div>
     </div>
 

@@ -38,8 +38,16 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
 
+  /* Altura da barra de tarefas: um só lugar define a folga de tudo que
+     flutua acima dela (avisos, menu, vinheta). */
+  --taskbar-h: 58px;
+
   --z-boot: 1000;
   --z-desktop: 10;
+  --z-taskbar: 20;
+  --z-menu: 30;
+  --z-sheet: 40;
+  --z-toast: 50;
 
   color-scheme: dark;
 }

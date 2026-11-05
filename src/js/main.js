@@ -1,20 +1,34 @@
 /**
  * Lunar OS — ponto de entrada.
- * Fase 1: orquestra apenas a boot sequence e o palco do desktop.
- * Fase 2 e Fase 3 registram seus módulos aqui.
+ *
+ * Fase 1: a boot sequence.
+ * Fase 2: a área de trabalho (papel de parede, barra, menu Iniciar).
+ * Fase 3 registra aqui o motor de janelas.
+ *
+ * A ligação entre boot e desktop é feita observando a classe `is-visible` do
+ * #desktop, e não chamando na mão dentro de um callback: assim funciona em
+ * TODOS os caminhos que revelam a área de trabalho — fim normal do boot,
+ * pular, watchdog, fail-safe e o script clássico de fallback.
  */
 
 import { BootSequence } from './boot/boot.js';
 import { audio } from './core/audio.js';
+import { Desktop } from './desktop/desktop.js';
 
 // Identificador de build: se o console não mostrar esta linha (ou mostrar uma
 // versão antiga), o navegador está servindo uma página em cache.
-const BUILD = '0.2.5';
+const BUILD = '0.3.0';
 console.info(`Lunar OS · build ${BUILD}`);
 
-const desktop = document.getElementById('desktop');
-const replayBtn = document.getElementById('replay-boot');
-const soundBtn = document.getElementById('desktop-sound');
+const desktopEl = document.getElementById('desktop');
+
+const shell = new Desktop({
+  build: BUILD,
+  onReplay() {
+    // Volta ao boot: a área de trabalho para de animar antes da cortina.
+    startBoot();
+  },
+});
 
 const boot = new BootSequence({
   onReveal() {
@@ -50,18 +64,8 @@ function startBoot() {
 
 startBoot();
 
-replayBtn?.addEventListener('click', () => {
-  audio.playUiTick({ frequency: 660, peak: 0.06 });
-  startBoot();
-});
-
-soundBtn?.addEventListener('click', async () => {
-  const unlocked = await audio.unlock();
-  if (!unlocked) return;
-  audio.playChime();
-});
-
-// Atalho de teclado: ESC durante o boot = pular.
+// Atalho de teclado: ESC durante o boot = pular. (Fora do boot, o ESC é do
+// desktop: fecha o menu Iniciar ou o painel "Sobre".)
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && document.body.classList.contains('is-booting')) {
     boot.skip();
@@ -69,7 +73,34 @@ window.addEventListener('keydown', (event) => {
 });
 
 // Em navegadores que exigem gesto, o primeiro clique já habilita o áudio.
-desktop?.addEventListener('pointerdown', () => audio.unlock(), { once: true });
+desktopEl?.addEventListener('pointerdown', () => audio.unlock(), { once: true });
+
+// ---------------------------------------------------------------------------
+// Boot ↔ desktop.
+//
+// O desktop é o dono do laço de animação do papel de parede: ele só deve
+// rodar com a área de trabalho na tela. Observar a classe cobre os seis
+// caminhos possíveis de revelação (fim normal, pular, watchdog interno,
+// fail-safe, fallback clássico e erro no start) com um único lugar.
+// ---------------------------------------------------------------------------
+let shellRunning = false;
+
+function syncShell() {
+  if (!desktopEl) return;
+  const visible = desktopEl.classList.contains('is-visible');
+  if (visible === shellRunning) return;
+  shellRunning = visible;
+  if (visible) shell.start();
+  else shell.stop();
+}
+
+if (desktopEl && 'MutationObserver' in window) {
+  new MutationObserver(syncShell).observe(desktopEl, {
+    attributes: true,
+    attributeFilter: ['class'],
+  });
+  syncShell(); // caso o fallback já tenha revelado antes deste módulo rodar
+}
 
 /**
  * Auto-atualização de build.
@@ -110,4 +141,4 @@ window.setTimeout(() => {
   else window.setTimeout(checkBuild, 6000);
 }, 6000);
 
-export { boot, audio };
+export { boot, audio, shell as desktop };

@@ -1,0 +1,646 @@
+/* ============================================================================
+   Lunar OS — barra de tarefas e menu Iniciar (Fase 2)
+   ----------------------------------------------------------------------------
+   Regras que este arquivo segue:
+
+   • Vidro fosco de verdade (`backdrop-filter`), com queda para superfície
+     opaca quando o navegador não suporta — nunca um borrão falso.
+   • Nenhum pixel depende de imagem: os ícones são SVG inline em currentColor.
+   • Altura da barra vem de `--taskbar-h`; todo o resto é derivado dela.
+   • Alvos de toque de 44px em dispositivos sem hover.
+   ========================================================================= */
+
+/* ------------------------------------------------------------- estrutura -- */
+
+.taskbar,
+.startmenu {
+  --glass: rgba(18, 18, 24, 0.58);
+  --glass-line: rgba(255, 255, 255, 0.1);
+}
+
+.taskbar {
+  position: relative;
+  z-index: var(--z-taskbar);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--taskbar-h);
+  margin: 0 max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom))
+    max(10px, env(safe-area-inset-left));
+  padding: 6px 8px;
+  border-radius: 18px;
+  border: 1px solid var(--glass-line);
+  background: var(--glass);
+  backdrop-filter: blur(var(--lunar-glass-blur)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--lunar-glass-blur)) saturate(150%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.07) inset,
+    0 24px 50px -28px rgba(0, 0, 0, 0.95);
+}
+
+/* --------------------------------------------------------------- Iniciar -- */
+
+.taskbar__start,
+.taskbar__search,
+.taskbar__tray-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 12px;
+  color: var(--lunar-text-dim);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.taskbar__start:hover,
+.taskbar__search:hover,
+.taskbar__tray-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--lunar-text);
+}
+
+.taskbar__start-icon,
+.taskbar__search-icon,
+.taskbar__tray-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+}
+
+.taskbar__start-icon svg,
+.taskbar__search-icon svg,
+.taskbar__tray-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Botão Iniciar usa a logo do projeto (a segunda — e última — imagem real
+   permitida). Se ela não carregar, o ícone de lua inline assume o lugar. */
+.taskbar__start-logo {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  /* Combina com o traço prateado dos demais ícones. */
+  filter: drop-shadow(0 0 6px rgba(207, 214, 255, 0.28));
+}
+
+.taskbar__start-fallback {
+  display: none;
+}
+
+.taskbar__start-icon[data-logo='failed'] .taskbar__start-logo {
+  display: none;
+}
+
+.taskbar__start-icon[data-logo='failed'] .taskbar__start-fallback {
+  display: grid;
+}
+
+.taskbar__start {
+  color: var(--lunar-text);
+  font-weight: 500;
+}
+
+/* Estado aberto: Iniciar fica aceso enquanto o menu está na tela. */
+.taskbar__start[aria-expanded='true'] {
+  background: rgba(139, 149, 255, 0.18);
+  color: #dfe2ff;
+}
+
+.taskbar__start[aria-expanded='true'] .taskbar__start-icon {
+  color: var(--lunar-accent);
+}
+
+/* ---------------------------------------------------------- apps fixados -- */
+
+.taskbar__apps {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.taskbar__app {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  color: var(--lunar-text-dim);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.taskbar__app svg {
+  width: 21px;
+  height: 21px;
+}
+
+.taskbar__app:hover,
+.taskbar__app:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--lunar-text);
+}
+
+/* Apps das fases seguintes continuam na barra (o sistema os anuncia), mas
+   sem o peso visual de quem já abre. */
+.taskbar__app[data-soon='true'] {
+  color: var(--lunar-text-faint);
+}
+
+/* -------------------------------------------------------------- relógio --- */
+
+.taskbar__tray {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.taskbar__tray-btn[aria-pressed='false'] {
+  color: var(--lunar-text-faint);
+}
+
+.taskbar__clock {
+  display: grid;
+  justify-items: end;
+  padding: 0 8px;
+  line-height: 1.15;
+  color: var(--lunar-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.taskbar__time {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--lunar-text);
+}
+
+.taskbar__date {
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  text-transform: capitalize;
+  color: var(--lunar-text-faint);
+}
+
+/* --------------------------------------------------------- menu Iniciar --- */
+
+.startmenu {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--taskbar-h) + max(20px, env(safe-area-inset-bottom)));
+  z-index: var(--z-menu);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(560px, calc(100% - max(20px, env(safe-area-inset-left)) - max(20px, env(safe-area-inset-right))));
+  max-height: min(72vh, 520px);
+  translate: -50% 0;
+  border-radius: 20px;
+  border: 1px solid var(--glass-line);
+  background: var(--glass);
+  backdrop-filter: blur(26px) saturate(150%);
+  -webkit-backdrop-filter: blur(26px) saturate(150%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.07) inset,
+    0 40px 90px -40px rgba(0, 0, 0, 1);
+  overflow: hidden;
+
+  /* Fechado: invisível, deslocado e FORA da ordem de tabulação. `visibility`
+     (e não `display`) para ainda haver o que animar na abertura. */
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(14px) scale(0.98);
+  transform-origin: bottom center;
+  pointer-events: none;
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 260ms var(--ease-out),
+    visibility 260ms linear;
+}
+
+.startmenu.is-open {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  pointer-events: auto;
+}
+
+/* ------------------------------------------------------------- busca ------ */
+
+.startmenu__head {
+  padding: 12px 12px 8px;
+}
+
+.startmenu__search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--lunar-line);
+  background: rgba(9, 9, 11, 0.5);
+  transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+
+.startmenu__search:focus-within {
+  border-color: rgba(139, 149, 255, 0.55);
+  background: rgba(9, 9, 11, 0.7);
+}
+
+.startmenu__search-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: var(--lunar-text-faint);
+}
+
+.startmenu__search-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.startmenu__search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--lunar-text);
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.startmenu__search-input::placeholder {
+  color: var(--lunar-text-faint);
+}
+
+.startmenu__search-input:focus {
+  outline: none;
+}
+
+.startmenu__search-input::-webkit-search-cancel-button {
+  filter: invert(1) opacity(0.5);
+}
+
+/* -------------------------------------------------------------- corpo ----- */
+
+.startmenu__body {
+  min-height: 0;
+  padding: 4px 8px 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.startmenu__section {
+  padding: 6px 8px 8px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lunar-text-faint);
+}
+
+.startmenu__grid {
+  display: grid;
+  /* 232px é a largura em que nome + dica ainda cabem em duas colunas no menu
+     de 560px. Colunas mais estreitas truncariam "Configurações" no meio. */
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.startmenu__tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  text-align: left;
+  color: var(--lunar-text-dim);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.startmenu__tile:hover,
+.startmenu__tile:focus-visible,
+.startmenu__tile.is-active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--lunar-line);
+  color: var(--lunar-text);
+}
+
+.startmenu__tile-glyph {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, var(--tone-a, #8b95ff) 0%, var(--tone-b, #4f5bd5) 100%);
+  color: #101018;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset;
+}
+
+.startmenu__tile[data-soon='true'] .startmenu__tile-glyph {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--lunar-line);
+  color: var(--lunar-text-dim);
+  box-shadow: none;
+}
+
+.startmenu__tile-glyph svg {
+  width: 18px;
+  height: 18px;
+}
+
+.startmenu__tile-text {
+  min-width: 0;
+}
+
+.startmenu__tile-name {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--lunar-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.startmenu__tile-hint {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--lunar-text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.startmenu__tile-soon {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--lunar-line);
+  color: var(--lunar-text-faint);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.startmenu__empty {
+  padding: 18px 12px 22px;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: var(--lunar-text-faint);
+}
+
+/* ------------------------------------------------------------- rodapé ----- */
+
+.startmenu__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--lunar-line);
+  background: rgba(9, 9, 11, 0.32);
+}
+
+.startmenu__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.startmenu__action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 11px;
+  border-radius: 10px;
+  border: 1px solid var(--lunar-line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--lunar-text-dim);
+  font-size: 0.75rem;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.startmenu__action:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--lunar-text);
+}
+
+.startmenu__action svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.startmenu__build {
+  margin-left: auto;
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lunar-text-faint);
+}
+
+/* ---------------------------------------------------------- vidro e queda - */
+
+/* Sem backdrop-filter o vidro vira superfície opaca: o texto continua legível
+   e o layout não muda. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .taskbar,
+  .startmenu {
+    --glass: rgba(18, 18, 24, 0.94);
+  }
+}
+
+/* ---------------------------------------------------------- adaptação ----- */
+
+/* Notebook/celular deitado: barra mais baixa e menu menor. */
+@media (max-height: 620px) {
+  :root {
+    --taskbar-h: 50px;
+  }
+
+  .taskbar__start,
+  .taskbar__search,
+  .taskbar__tray-btn {
+    height: 36px;
+    padding: 0 10px;
+  }
+
+  .taskbar__app {
+    width: 36px;
+    height: 36px;
+  }
+
+  .startmenu {
+    max-height: min(80vh, 420px);
+  }
+
+  .startmenu__grid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+}
+
+@media (max-height: 460px) {
+  :root {
+    --taskbar-h: 46px;
+  }
+
+  .taskbar__clock {
+    padding: 0 4px;
+  }
+
+  .taskbar__date {
+    display: none;
+  }
+
+  .startmenu {
+    max-height: min(88vh, 360px);
+  }
+
+  .startmenu__search {
+    height: 38px;
+  }
+}
+
+/* Telas estreitas: some o rótulo "Iniciar"/"Buscar" e a data; os ícones
+   continuam com alvo de toque confortável. */
+@media (max-width: 720px) {
+  .taskbar__start-label,
+  .taskbar__search-label,
+  .taskbar__tray-label {
+    display: none;
+  }
+
+  .taskbar__start,
+  .taskbar__search,
+  .taskbar__tray-btn {
+    padding: 0 10px;
+  }
+}
+
+@media (max-width: 520px) {
+  .taskbar {
+    gap: 4px;
+    padding: 5px 6px;
+    border-radius: 16px;
+  }
+
+  .taskbar__search {
+    display: none; /* o menu já abre com a busca no foco */
+  }
+
+  .taskbar__apps {
+    gap: 0;
+  }
+
+  .startmenu {
+    bottom: calc(var(--taskbar-h) + max(12px, env(safe-area-inset-bottom)));
+    max-height: min(78vh, 480px);
+  }
+
+  .startmenu__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .startmenu__build {
+    display: none;
+  }
+}
+
+/* Alvos de toque: 44px onde não há hover. */
+@media (hover: none), (pointer: coarse) {
+  .taskbar__start,
+  .taskbar__search,
+  .taskbar__tray-btn {
+    min-height: 44px;
+  }
+
+  .taskbar__app {
+    width: 44px;
+    height: 44px;
+  }
+
+  .startmenu__tile {
+    padding: 12px 10px;
+  }
+
+  .startmenu__action {
+    height: 44px;
+  }
+}
+
+/* Telas muito estreitas: a data sai antes de os botões apertarem, e os fixados
+   encolhem por último. Se ainda assim não couber, a lista de apps é cortada
+   (ela tem `overflow: hidden`) — o relógio e o som nunca são empurrados fora. */
+@media (max-width: 420px) {
+  .taskbar__date {
+    display: none;
+  }
+
+  .taskbar__clock {
+    padding: 0 2px;
+  }
+}
+
+@media (max-width: 380px) {
+  .taskbar {
+    gap: 2px;
+  }
+
+  .taskbar__app,
+  .taskbar__app[style] {
+    width: 36px;
+    height: 36px;
+  }
+
+  .taskbar__app svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .taskbar__tray-btn {
+    padding: 0 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .startmenu,
+  .taskbar__start,
+  .taskbar__search,
+  .taskbar__tray-btn,
+  .taskbar__app,
+  .startmenu__tile,
+  .startmenu__action,
+  .startmenu__search {
+    transition-duration: 1ms;
+  }
+}

@@ -1,13 +1,15 @@
 # Lunar OS
 
-Web OS construído em fases. Esta entrega contém a **Fase 1: tela de boot e inicialização**.
+Web OS construído em fases. Esta entrega contém a **Fase 1** (tela de boot) e a
+**Fase 2** (área de trabalho: papel de parede procedural, barra de tarefas e menu
+Iniciar).
 
-![Fluxo de boot](docs/boot-preview.png)
+![Papel de parede procedural](docs/wallpaper-preview.png)
 
-> **Cache:** o servidor envia `Cache-Control: no-store`, o HTML referencia CSS/JS com `?v=0.2.5`
+> **Cache:** o servidor envia `Cache-Control: no-store`, o HTML referencia CSS/JS com `?v=0.3.0`
 > e a página se auto-atualiza: ela compara a própria versão com `/version.json` (exposto pelo
 > `server.mjs` a partir do `package.json`) e recarrega uma única vez se estiver velha.
-> O rodapé mostra `demo 0.2.5` e o console imprime `Lunar OS · build 0.2.5`.
+> O rodapé mostra `demo 0.3.0` e o console imprime `Lunar OS · build 0.3.0`.
 
 ---
 
@@ -22,6 +24,15 @@ PORT=8080 node server.mjs
 ```
 
 Não há dependências: `server.mjs` é um servidor estático de ~70 linhas, escrito só com a biblioteca padrão do Node.
+
+---
+
+## Sumário
+
+| | O que entrega | Onde |
+| --- | --- | --- |
+| **Fase 1** | Boot universal: escala única, bolinhas em CSS puro, som sintetizado e seis redes de segurança para nunca travar | `src/css/boot.css`, `src/js/boot/boot.js` |
+| **Fase 2** | Papel de parede procedural em Canvas, barra de tarefas com vidro fosco, menu Iniciar com busca e relógio ao vivo | `src/css/desktop.css`, `src/css/taskbar.css`, `src/js/desktop/*` |
 
 ---
 
@@ -285,6 +296,129 @@ Há também o botão **Som** (canto inferior direito) para ligar/desligar, e **E
 
 ---
 
+## Como a Fase 2 funciona
+
+| Requisito | Implementação |
+| --- | --- |
+| Papel de parede dinâmico em Canvas | `Wallpaper` em `src/js/desktop/wallpaper.js` |
+| Barra de tarefas com vidro fosco | `.taskbar` em `src/css/taskbar.css` |
+| Botão Iniciar + menu com busca | `Desktop` em `src/js/desktop/desktop.js` |
+| Relógio em tempo real | `_tickClock()` — `toLocaleTimeString('pt-BR')`, acorda a cada 15 s |
+
+### O papel de parede é desenhado, não carregado
+
+Nenhuma imagem nova entra no projeto (a regra continua valendo: só as duas PNGs
+de logo). O céu é gerado por **semente**: o mesmo `seed` produz exatamente a
+mesma lua, as mesmas crateras e o mesmo campo de estrelas — então "regerar papel
+de parede" é literalmente sortear outro número.
+
+![Papel de parede procedural](docs/wallpaper-preview.png)
+
+Três camadas são pré-renderizadas **uma vez** e depois apenas compostas:
+
+| Camada | Resolução | Conteúdo |
+| --- | --- | --- |
+| `_nebula` | ½ da tela | manchas somadas em `globalCompositeOperation = 'lighter'` + faixa da via láctea |
+| `_moon` | tela cheia | lua com crateras em `ellipse`, brilho externo aditivo, halo de horizonte |
+| `_stars` | tela cheia | campo de estrelas, poeira e ~12% de estrelas cintilantes |
+
+O laço de animação faz **3 `drawImage` por quadro**, mais os arcos das
+cintilantes e dos cadentes — nada de `filter: blur()` ou `shadowBlur` dentro do
+laço, que são as duas operações que afundam um canvas 2D. O desfoque da nebulosa
+vem de gradientes radiais empilhados e da camada em meia resolução.
+
+Regras de custo que o módulo segue:
+
+- **DPR limitado a 2.** Acima disso o ganho é invisível e o custo é quadrático.
+- **O laço só roda com a área de trabalho na tela.** `main.js` observa a classe
+  `is-visible` e chama `start()`/`stop()`: durante o boot e com a aba oculta o
+  canvas não repinta nada (`visibilitychange` também cancela o laço).
+- **Parallax de ponteiro** com `lerp` (nunca cola no cursor) e estrelas cadentes
+  em intervalos sorteados.
+- **`prefers-reduced-motion`**: um único quadro estático, zero animação.
+
+#### Por que o canvas mede a tela antes de desenhar
+
+`start()` chama `resize()` **antes** de construir as camadas. Sem isso o
+elemento ficava com os 300×150 padrão do HTML e o CSS o esticava: o céu aparecia
+borrado até o primeiro `resize`. Relacionado: `_build()` **nunca** chama
+`resize()` — com o canvas em 0×0 (aba recém-aberta, `display: none`) isso virava
+recursão `_build → resize → _build` e estourava a pilha.
+
+### Barra de tarefas
+
+Vidro fosco de verdade: `backdrop-filter: blur(22px) saturate(150%)` sobre
+`rgba(18, 18, 24, 0.58)`. Onde o navegador não suporta, um `@supports not`
+troca o vidro por superfície opaca — legível em vez de um borrão que não existe.
+
+A estrutura é `grid-template-rows: 1fr auto` no `#desktop`: a superfície dos
+ícones ocupa o que sobra e a barra fica na própria linha, então **nada se
+sobrepõe** em telas baixas (mesma lição do rodapé do boot, que era `absolute` e
+cobria o status). A altura vive em `--taskbar-h`, e tudo o que flutua acima dela
+— menu, avisos — deriva a folga desse token.
+
+Os ícones são **SVG inline** (`ICONS` em `apps.js`, traço de 1,6 px em
+`currentColor`): herdam a cor do botão, não custam requisição e não violam a
+regra das duas imagens. A única exceção é o próprio botão **Iniciar**, que usa
+a segunda imagem real do projeto, `lunar-logo.png` — e, se ela não carregar, o
+ícone de lua inline assume o lugar em vez de deixar um botão furado.
+
+### Menu Iniciar
+
+- **Busca tolerante**: `normalize()` tira acentos e caixa, então "musica" acha
+  *Música* e "config" acha *Configurações*. A pontuação prioriza nome exato →
+  prefixo → trecho → palavra-chave → dica, assim "term" acha Terminal antes de
+  qualquer citação a terminal no meio de uma descrição.
+- **Teclado primeiro**: ↑/↓ navegam pelos resultados, Enter executa o primeiro,
+  ESC limpa a busca e só fecha no segundo toque (como se espera que seja).
+- **Fecha** ao clicar fora, ao abrir um app e ao redimensionar abaixo de 360 px.
+- **Fechado, sai da ordem de tabulação** (`visibility: hidden`, e não
+  `display: none`) — continua animável, mas não é alcançável por Tab.
+
+Os apps das fases seguintes continuam listados, marcados com a fase e
+esmaecidos. Clicar neles **responde**: em vez de ignorar o toque, um aviso diz
+em que fase chegam. O único app que já abre é **Sobre o Lunar** (painel modal
+com ESC, backdrop e foco devolvido a quem abriu).
+
+### Ações do sistema
+
+| Ação | O que faz |
+| --- | --- |
+| Regerar papel de parede | sorteia nova semente e reconstrói as três camadas |
+| Alternar som | liga/desliga o motor de áudio; o botão da bandeja reflete o estado real (`aria-pressed`) |
+| Repetir boot | para o laço do canvas e volta para a Fase 1 |
+
+### Hidratação, não construção
+
+O esqueleto — barra, Iniciar, campo de busca, bandeja e rodapé do menu — está no
+`index.html`; o JS só preenche listas e liga eventos. É a mesma filosofia do
+fallback do boot: **se o módulo ES não carregar, a área de trabalho ainda
+aparece**, com a barra no lugar, em vez de uma tela vazia.
+
+A ligação boot ↔ desktop também não é um callback manual: `main.js` observa a
+classe `is-visible` com `MutationObserver`, o que cobre todos os caminhos de
+revelação — fim normal, *Pular*, watchdog, fail-safe, fallback clássico e erro
+no `start()`.
+
+### Verificação
+
+Sem navegador na sandbox, a Fase 2 foi conferida por três vias:
+
+1. **jsdom com o `index.html` real** — 48 asserções: listas renderizadas, busca
+   (com e sem acento, por palavra-chave, estado vazio), abrir/fechar por ESC,
+   clique fora e Enter, avisos, alternância de som, `replay`, DPR, resize
+   reconstruindo as camadas e `destroy()` limpando os timers.
+2. **Rasterização fora do navegador** — um rasterizador Canvas 2D mínimo
+   (gradientes, clipping, `lighter`) executou o próprio `wallpaper.js` e gerou
+   `docs/wallpaper-preview.png`. Conferência numérica: disco lunar em (860, 280)
+   com 247 de luminância caindo para 170 na borda, halo de horizonte elevando o
+   rodapé e fundo mínimo em 7 (preto quase absoluto).
+3. **Integração fim a fim** — boot concluído em ~4,9 s, desktop revelado, canvas
+   dimensionado em pixels de dispositivo e papel de parede rodando; e o ciclo
+   *Repetir boot* parando e religando o laço.
+
+---
+
 ## Estrutura
 
 ```
@@ -292,33 +426,42 @@ index.html
 server.mjs                 # servidor estático sem dependências
 assets/
   lunar-boot.png           # logo 3D usada no boot
-  lunar-logo.png           # logo base (usada na barra de tarefas, Fase 2)
+  lunar-logo.png           # logo do botão Iniciar
 fonts/                     # Plus Jakarta Sans 200–800 (woff2)
 src/css/
-  fonts.css  base.css  boot.css  desktop.css
+  fonts.css  base.css  boot.css
+  desktop.css              # palco: papel de parede, vinheta, ícones, avisos
+  taskbar.css              # barra de tarefas e menu Iniciar
 src/js/
-  main.js                  # ponto de entrada
+  main.js                  # ponto de entrada (boot ↔ desktop)
   core/ease.js             # curvas e PRNG determinístico
   core/audio.js            # motor de áudio sintetizado
   boot/boot.js             # controlador da sequência de boot
+  desktop/apps.js          # catálogo: apps, ícones SVG, ações e busca
+  desktop/wallpaper.js     # papel de parede procedural em Canvas 2D
+  desktop/desktop.js       # barra, menu, relógio, avisos, painel "Sobre"
+docs/
+  boot-preview.png  dots-animation.png  wallpaper-preview.png
 ```
-
-`src/js/desktop/` já existe vazio, reservado para as Fases 2 e 3.
 
 ---
 
 ## Regras do projeto respeitadas
 
-- **Apenas duas imagens reais** (`assets/lunar-boot.png`, `assets/lunar-logo.png`). Papel de parede e demais efeitos são gerados em runtime; as bolinhas do carregamento são CSS puro.
+- **Apenas duas imagens reais** (`assets/lunar-boot.png`, `assets/lunar-logo.png`). O papel de parede é desenhado em Canvas a partir de uma semente, os ícones são SVG inline e as bolinhas do carregamento são CSS puro.
 - **Nenhum arquivo de áudio.** Todo som vem de osciladores e buffers da Web Audio API.
 - **Nenhuma persistência.** Não há `localStorage`, cookies, IndexedDB ou escrita em disco; todo estado vive em memória. A convenção de `tmp/` está documentada no `.gitignore` para as próximas fases.
 - **Tipografia**: Plus Jakarta Sans, com fallback para a pilha do sistema.
 
 ---
 
-## Próximas fases
+## Próxima fase
 
-- **Fase 2** — papel de parede dinâmico em Canvas, barra de tarefas com vidro fosco, botão Iniciar com `lunar-logo.png` e relógio em tempo real.
 - **Fase 3** — motor de janelas (abrir, fechar, arrastar) e terminal com VFS em memória.
 
-> O desktop atual exibe um cartão com *Repetir boot* e *Testar som do sistema* — andaimes de demonstração para validar a Fase 1; a Fase 2 os substitui pelo ambiente real.
+O terreno está preparado: cada app do catálogo carrega um `phase`, e abrir um app
+passa por `Desktop.registerApp(id, handler)`. A Fase 3 registra as janelas nesse
+mapa — **sem tocar em layout, barra, menu ou busca**.
+
+> Os apps de fase futura já aparecem na barra e no menu, marcados e esmaecidos.
+> Clicar neles avisa em que fase chegam, em vez de não responder.

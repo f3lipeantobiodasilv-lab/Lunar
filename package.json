@@ -1,6 +1,6 @@
 {
   "name": "lunar-os",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "private": true,
   "description": "Lunar — Web OS demo. Fase 1: tela de boot com áudio sintetizado e carregamento em CSS.",
   "type": "module",
