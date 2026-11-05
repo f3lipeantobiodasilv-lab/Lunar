@@ -89,7 +89,14 @@ export class AudioEngine {
     if (!ctx) return false;
     if (ctx.state === 'running') return true;
     try {
-      await ctx.resume();
+      // ARMADILHA: sem gesto do usuário, o Chrome bloqueia o autoplay e
+      // `ctx.resume()` NÃO rejeita — a Promise simplesmente nunca resolve.
+      // Qualquer `await` nela trava quem chamou para sempre. Foi assim que o
+      // boot ficava preso em "Pronto" sem nunca revelar o desktop.
+      await Promise.race([
+        ctx.resume(),
+        new Promise((resolve) => setTimeout(resolve, 700)),
+      ]);
     } catch {
       /* ignorado */
     }

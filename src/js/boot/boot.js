@@ -46,6 +46,14 @@ const MAX_BOOT_TIME = 15000;
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Corrida com prazo. Uma Promise que não resolve (áudio bloqueado pelo
+ * autoplay, decodificador travado, fonte que nunca chega) não pode segurar o
+ * boot: passado o prazo, seguimos em frente de qualquer forma.
+ */
+const withTimeout = (promise, ms, fallback) =>
+  Promise.race([promise, wait(ms).then(() => fallback)]);
+
 function sampleCurve(t) {
   const time = clamp(t, 0, 1);
   for (let i = 1; i < CURVE.length; i += 1) {
@@ -76,6 +84,7 @@ export class BootSequence {
     this.state = 'idle'; // idle | running | completing | revealing | done
     this._revealTimer = null;
     this._watchdog = null;
+    this._completeGuard = null;
     this.startTime = 0;
     this.progress = 0;
     this._progressTimer = null;
@@ -84,8 +93,8 @@ export class BootSequence {
     this.waitingForGesture = false;
     this._gestureResolve = null;
     this._timings = {
-      load: this.reduceMotion ? 1500 : 3200,
-      settle: this.reduceMotion ? 320 : 1900,
+      load: this.reduceMotion ? 1200 : 2200,
+      settle: this.reduceMotion ? 300 : 1200,
       fade: this.reduceMotion ? 260 : 900,
     };
 
@@ -98,6 +107,7 @@ export class BootSequence {
   async start() {
     if (!this.el) return;
     clearTimeout(this._revealTimer);
+    clearTimeout(this._completeGuard);
     this._revealTimer = null;
 
     this.state = 'running';
@@ -187,7 +197,7 @@ export class BootSequence {
     const jobs = [];
 
     if (document.fonts?.ready) {
-      jobs.push(Promise.race([document.fonts.ready, wait(2600)]).catch(() => {}));
+      jobs.push(Promise.race([document.fonts.ready, wait(1800)]).catch(() => {}));
     }
 
     jobs.push(
@@ -203,7 +213,7 @@ export class BootSequence {
           if (this.logo.complete && this.logo.naturalWidth > 0) return resolve();
           this.logo.addEventListener('load', () => resolve(), { once: true });
           this.logo.addEventListener('error', () => resolve(), { once: true });
-          setTimeout(resolve, 2600);
+          setTimeout(resolve, 1800);
         })
       );
     }
@@ -271,7 +281,15 @@ export class BootSequence {
     // Acende o anel inteiro; a dissolução acompanha o fade-out (.is-leaving).
     this._setDotsPaused(true);
 
-    await this._playBootSound();
+    // Rede de segurança final: por melhor que seja o tratamento de áudio, uma
+    // etapa que não resolva não pode impedir a tela de sair do boot. Este
+    // temporizador revela o desktop de qualquer forma.
+    clearTimeout(this._completeGuard);
+    this._completeGuard = setTimeout(() => {
+      if (this.state === 'completing') this._reveal();
+    }, this.reduceMotion ? 1400 : 5500);
+
+    await withTimeout(this._playBootSound(), this.reduceMotion ? 900 : 4500);
     if (this.state !== 'completing') return; // pode ter sido pulado/reiniciado
 
     await wait(this.reduceMotion ? 120 : 320);
@@ -305,7 +323,7 @@ export class BootSequence {
     this.setStatus('Toque na tela para ouvir o som de boot');
     this.el.classList.add('is-awaiting-gesture');
 
-    const gesture = await this._waitForGesture(this.reduceMotion ? 1200 : 4200);
+    const gesture = await this._waitForGesture(this.reduceMotion ? 800 : 1600);
     this.waitingForGesture = false;
     this.el.classList.remove('is-awaiting-gesture');
     if (this.state !== 'completing') return;
@@ -355,6 +373,8 @@ export class BootSequence {
   // ------------------------------------------------------------- revelar ----
 
   _reveal() {
+    if (this.state !== 'completing') return;
+    clearTimeout(this._completeGuard);
     this.state = 'revealing';
     this.setStatus('Pronto');
 
@@ -408,6 +428,7 @@ export class BootSequence {
     clearTimeout(this._revealTimer);
     clearTimeout(this._progressTimer);
     clearTimeout(this._watchdog);
+    clearTimeout(this._completeGuard);
   }
 
   /** Congela/retoma a animação das bolinhas (aba oculta ou fim do boot). */

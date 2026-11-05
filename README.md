@@ -4,10 +4,10 @@ Web OS construído em fases. Esta entrega contém a **Fase 1: tela de boot e ini
 
 ![Fluxo de boot](docs/boot-preview.png)
 
-> **Cache:** o servidor envia `Cache-Control: no-store`, o HTML referencia CSS/JS com `?v=0.2.3`
+> **Cache:** o servidor envia `Cache-Control: no-store`, o HTML referencia CSS/JS com `?v=0.2.4`
 > e a página se auto-atualiza: ela compara a própria versão com `/version.json` (exposto pelo
 > `server.mjs` a partir do `package.json`) e recarrega uma única vez se estiver velha.
-> O rodapé mostra `demo 0.2.3` e o console imprime `Lunar OS · build 0.2.3`.
+> O rodapé mostra `demo 0.2.4` e o console imprime `Lunar OS · build 0.2.4`.
 
 ---
 
@@ -53,19 +53,39 @@ cria o rastro.
 A órbita aplica `scaleY(0.62)` antes do `rotate`: o anel vira uma elipse e cada ponto
 encolhe no fundo e cresce na frente, o que dá a leitura 3D (anel inclinado girando).
 
-#### Três armadilhas que já quebraram esta animação
+#### Perspectiva: por que as bolinhas pareciam "chapadas no chão"
 
-1. **Faixas de 12,5% em `steps`.** A primeira versão do rastro usava 8 patamares de
-   opacidade seguidos de salto. Medido quadro a quadro, o brilho ficava 6 amostras
-   idêntico e então pulava — visualmente, travado. A correção é interpolar a curva
-   (`linear`), não fatiá-la.
-2. **Rotação de 0° a 360°.** `rotate(0deg)` e `rotate(360deg)` são o mesmo ponto, então
-   um keyframe com só `0%` e `100%` não gira: o navegador interpola como "sem mudança".
-   Passos intermediários em 25% / 50% / 75% forçam o avanço.
+A primeira tentativa de 3D inclinou o plano do anel com `rotateX(58deg)`. O
+resultado foi pior que o original: a rotação 3D achatava o **próprio ponto**
+— cada bolinha virava uma elipse fina, como uma moeda vista de lado.
+
+Hoje a perspectiva não vem de rotação: o ponto é posicionado direto na elipse
+(`x = R·sen θ`, `y = −R·cos θ`) e recebe **escala e opacidade próprias** —
+menor e mais apagado no alto (fundo do anel), maior e mais claro embaixo
+(frente). O ponto permanece circular. São 16 paradas no keyframe, porque com
+4 a interpolação do `translate` corta os cantos e o percurso vira um losango.
+
+O visual de esfera vem do gradiente radial com realce fora do centro
+(`circle at 34% 26%`) mais uma sombra interna na base — um gradiente
+centralizado lia como adesivo.
+
+#### Cinco armadilhas que já quebraram esta animação
+
+1. **Faixas de 12,5% em `steps`.** A primeira versão do rastro usava 8
+   patamares de opacidade seguidos de salto; medido quadro a quadro, o brilho
+   ficava 6 amostras idêntico e então pulava. A correção é interpolar a curva.
+2. **Rotação de 0° a 360°.** São o mesmo ponto: um keyframe com só `0%` e
+   `100%` não gira. Passos intermediários forçam o avanço.
 3. **Somar o ângulo duas vezes.** O deslocamento de cada ponto já vem do
-   `animation-delay`. Somar também um `rotate(var(--i) * 45deg)` no keyframe girava cada
-   ponto duas vezes e fazia o ponto 4 cair exatamente sobre o ponto 0 — o anel ficava com
-   4 posições e os pontos opostos se cancelavam por diferença de opacidade.
+   `animation-delay`; somar também `rotate(var(--i) * 45deg)` no keyframe fazia
+   o ponto 4 cair sobre o 0 e o anel ficava com 4 posições.
+4. **Sinal do `animation-delay`.** Com atraso negativo, a cauda aparece na
+   frente do líder e o conjunto lê como uma cobra girando ao contrário do
+   próprio movimento. O atraso é positivo: cada ponto entra depois do vizinho,
+   e com a órbita no sentido anti-horário o líder fica à frente da cauda.
+5. **Cauda que não desaparece.** Se a opacidade mínima da curva não chega perto
+   de zero, os 8 pontos ficam todos acesos e formam um anel em vez de um
+   rastro. A curva atual termina em `0.02`.
 
 #### Custo por quadro
 
@@ -117,6 +137,31 @@ Hoje:
 
 A animação das bolinhas continua sendo CSS, que independe de rAF (e fica pausada quando a aba está oculta, por economia).
 
+### O boot travava em "Pronto" (áudio bloqueado)
+
+O sintoma relatado foi "às vezes demora muito e só aparece Iniciando, sem os
+textos de preparando". Reproduzido de forma determinística colocando a página
+em segundo plano: o status chegava a **"Pronto"** e a tela **nunca** saía do
+boot — nem depois de voltar ao foco.
+
+Causa: sem gesto do usuário, o Chrome bloqueia o autoplay e
+`AudioContext.resume()` **não rejeita** — a Promise simplesmente nunca resolve.
+O `await this._playBootSound()` em `_complete()` ficava pendurado para sempre,
+e a chamada a `_reveal()` que vem depois nunca acontecia. O console registrava
+`The AudioContext was not allowed to start`.
+
+Duas correções independentes:
+
+1. `AudioEngine.unlock()` corre `ctx.resume()` contra um prazo de 700 ms, então
+   nunca pode ficar pendurado.
+2. `_complete()` protege a reprodução do som com um prazo **e** arma um
+   temporizador de segurança que revela o desktop de qualquer forma. Nenhuma
+   etapa — áudio, fonte ou imagem — consegue mais impedir a saída do boot.
+
+O ritmo também foi encurtado: ~4,9 s no total (era ~6,5 s), e a espera por um
+gesto para ouvir o som caiu de 4,2 s para 1,6 s.
+
+
 ### Responsividade
 
 A composição escala em quatro faixas, sempre centralizada e sem sobreposição entre ícone, anel e texto:
@@ -148,7 +193,7 @@ Um low-pass compartilhado abre de 420 Hz a 5,2 kHz durante o acorde (o som "nasc
 Navegadores não deixam tocar áudio antes de um gesto. O fluxo cobre os dois casos:
 
 - **Com gesto** (clique/tecla em qualquer lugar): o áudio é destravado, o acorde toca e a tela revela o desktop.
-- **Sem gesto**: o boot chega a 100% e mostra *"Toque na tela para ouvir o som de boot"* com o indicador de som pulsando. O primeiro gesto toca o acorde; se não houver gesto em ~4 s, a demo revela o desktop mesmo assim (nunca trava).
+- **Sem gesto**: o boot chega a 100% e mostra *"Toque na tela para ouvir o som de boot"* com o indicador de som pulsando. O primeiro gesto toca o acorde; se não houver gesto em ~1,6 s, a demo revela o desktop mesmo assim — e há ainda um temporizador de segurança que revela de qualquer forma caso qualquer etapa trave.
 
 Há também o botão **Som** (canto inferior direito) para ligar/desligar, e **ESC** ou **Pular** para ir direto ao fim — nunca a um estado intermediário quebrado.
 

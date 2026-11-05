@@ -106,12 +106,20 @@
   --spin: 1.5s;
   /* 1 = anel de frente; menor = mais inclinado (elipse/perspectiva).
      Reduzido nas faixas de janela baixa para o anel não colidir com o texto. */
-  --flat-y: 0.62;
+  --flat-y: 0.6;
+  /* Altura aparente do anel. É ela (e não --ring) que define quanto o
+     conjunto ocupa na tela: com a perspectiva, a elipse é mais baixa. */
+  --ring-h: calc(var(--ring) * var(--flat-y));
+  /* Quanto o ponto cresce na frente do anel. */
+  --front: 1.28;
 
   position: relative;
   width: var(--ring);
   height: var(--ring);
   flex: 0 0 auto;
+  /* `preserve-3d` não é usado: a matriz 3D é montada à mão em cada keyframe
+     (ver dotOrbit). Aqui só isolamos a camada para o compositor. */
+  isolation: isolate;
   /* A elipse é aplicada no eixo Y da órbita: o anel ocupa
      --ring × (--ring × --flat-y), por isso a altura real é menor que a largura. */
   display: grid;
@@ -126,9 +134,20 @@
   height: var(--dot);
   margin: calc(var(--dot) / -2) 0 0 calc(var(--dot) / -2);
   border-radius: 50%;
+  /* Esfera, não disco: o realce fica no alto e a base escurece, como se a luz
+     viesse de cima. Um gradiente radial chapado lia como adesivo no chão. */
   background:
-    radial-gradient(circle at 35% 30%, #fff 0%, #f2f4ff 45%, #cfd6ef 100%);
-  box-shadow: 0 0 10px rgba(190, 200, 255, 0.45);
+    radial-gradient(
+      circle at 34% 26%,
+      #ffffff 0%,
+      #eef2ff 26%,
+      #b9c4e6 62%,
+      #6d7899 100%
+    );
+  /* Halo curto: reforça o volume sem virar borrão. */
+  box-shadow:
+    inset -1px -2px 3px rgba(18, 22, 40, 0.55),
+    0 0 9px rgba(196, 208, 255, 0.5);
   will-change: transform, opacity;
 
   /* Duas animações apenas — e ambas no compositor (transform e opacity).
@@ -141,9 +160,14 @@
   animation:
     dotOrbit var(--spin) linear infinite,
     dotBrightness var(--spin) linear infinite;
+  /* Atraso POSITIVO: cada ponto entra um pouco depois do vizinho. Combinado
+     com a órbita no sentido anti-horário, o ponto que acabou de acender fica
+     à frente e os anteriores formam a cauda atrás dele — se o sinal fosse
+     negativo, a cauda apareceria na frente e o conjunto leria como uma cobra
+     girando ao contrário do próprio movimento. */
   animation-delay:
-    calc(var(--spin) / 8 * var(--i) * -1),
-    calc(var(--spin) / 8 * var(--i) * -1);
+    calc(var(--spin) / 8 * var(--i)),
+    calc(var(--spin) / 8 * var(--i));
 }
 
 /* --- 1. Órbita: percorre o anel com perspectiva -------------------------
@@ -158,43 +182,108 @@
       também giraria cada ponto duas vezes e faria o ponto 4 cair exatamente
       sobre o 0, deixando o anel com só 4 posições. Por isso o keyframe é
       idêntico para os 8 pontos. */
+/* Órbita em elipse, em 16 paradas.
+   Cada parada é um ponto da elipse (x = R·sen θ, y = −R·cos θ) com uma escala
+   própria: menor no alto (fundo do anel), maior embaixo (frente). 16 paradas,
+   não 4, porque com poucas paradas a interpolação do `translate` corta os
+   cantos e o ponto descreve um losango.
+
+   Importante: nada de `rotateX` no elemento. Inclinar o plano com rotação 3D
+   achata o PRÓPRIO ponto (ele vira uma elipse fina, como uma moeda vista de
+   lado) — é o que fazia as bolinhas parecerem chapadas no chão. Aqui a
+   perspectiva vem da posição + escala + opacidade, e o ponto permanece
+   circular.
+   Os multiplicadores são percentuais de `--orbit`, então a elipse acompanha
+   qualquer tamanho de tela. */
 @keyframes dotOrbit {
   0% {
     transform:
-      scaleY(var(--flat-y))
-      rotate(0deg)
-      translateY(calc(var(--orbit) * -1))
-      scale(0.62);
+      translate(calc(var(--orbit) * 0 / 100), calc(var(--orbit) * -100 / 100))
+      scale(0.8);
+  }
+  6.25% {
+    transform:
+      translate(calc(var(--orbit) * 38.2683 / 100), calc(var(--orbit) * -92.388 / 100))
+      scale(0.8145);
+  }
+  12.5% {
+    transform:
+      translate(calc(var(--orbit) * 70.7107 / 100), calc(var(--orbit) * -70.7107 / 100))
+      scale(0.8556);
+  }
+  18.75% {
+    transform:
+      translate(calc(var(--orbit) * 92.388 / 100), calc(var(--orbit) * -38.2683 / 100))
+      scale(0.9173);
   }
   25% {
     transform:
-      scaleY(var(--flat-y))
-      rotate(90deg)
-      translateY(calc(var(--orbit) * -1))
-      scale(0.82);
+      translate(calc(var(--orbit) * 100 / 100), calc(var(--orbit) * -0 / 100))
+      scale(0.99);
+  }
+  31.25% {
+    transform:
+      translate(calc(var(--orbit) * 92.388 / 100), calc(var(--orbit) * 38.2683 / 100))
+      scale(1.0627);
+  }
+  37.5% {
+    transform:
+      translate(calc(var(--orbit) * 70.7107 / 100), calc(var(--orbit) * 70.7107 / 100))
+      scale(1.1244);
+  }
+  43.75% {
+    transform:
+      translate(calc(var(--orbit) * 38.2683 / 100), calc(var(--orbit) * 92.388 / 100))
+      scale(1.1655);
   }
   50% {
     transform:
-      scaleY(var(--flat-y))
-      rotate(180deg)
-      translateY(calc(var(--orbit) * -1))
-      scale(1.06);
+      translate(calc(var(--orbit) * 0 / 100), calc(var(--orbit) * 100 / 100))
+      scale(1.18);
+  }
+  56.25% {
+    transform:
+      translate(calc(var(--orbit) * -38.2683 / 100), calc(var(--orbit) * 92.388 / 100))
+      scale(1.1655);
+  }
+  62.5% {
+    transform:
+      translate(calc(var(--orbit) * -70.7107 / 100), calc(var(--orbit) * 70.7107 / 100))
+      scale(1.1244);
+  }
+  68.75% {
+    transform:
+      translate(calc(var(--orbit) * -92.388 / 100), calc(var(--orbit) * 38.2683 / 100))
+      scale(1.0627);
   }
   75% {
     transform:
-      scaleY(var(--flat-y))
-      rotate(270deg)
-      translateY(calc(var(--orbit) * -1))
-      scale(0.82);
+      translate(calc(var(--orbit) * -100 / 100), calc(var(--orbit) * 0 / 100))
+      scale(0.99);
+  }
+  81.25% {
+    transform:
+      translate(calc(var(--orbit) * -92.388 / 100), calc(var(--orbit) * -38.2683 / 100))
+      scale(0.9173);
+  }
+  87.5% {
+    transform:
+      translate(calc(var(--orbit) * -70.7107 / 100), calc(var(--orbit) * -70.7107 / 100))
+      scale(0.8556);
+  }
+  93.75% {
+    transform:
+      translate(calc(var(--orbit) * -38.2683 / 100), calc(var(--orbit) * -92.388 / 100))
+      scale(0.8145);
   }
   100% {
     transform:
-      scaleY(var(--flat-y))
-      rotate(360deg)
-      translateY(calc(var(--orbit) * -1))
-      scale(0.62);
+      translate(calc(var(--orbit) * -0 / 100), calc(var(--orbit) * -100 / 100))
+      scale(0.8);
   }
 }
+
+
 
 
 
@@ -206,16 +295,22 @@
    ciclo, os 8 pontos caem em fases diferentes desta curva e formam, a cada
    instante, um líder + uma cauda que se dissolve. */
 @keyframes dotBrightness {
-  0%   { opacity: 0.08; }
-  10%  { opacity: 0.3; }
-  20%  { opacity: 0.72; }
+  /* O pico é curto e a cauda cai até 0,02 — praticamente invisível. É isso
+     que faz o rastro "sumir" em vez de virar um anel aceso: só o líder e os
+     dois ou três pontos logo atrás dele têm presença real. */
+  0%   { opacity: 0.02; }
+  6%   { opacity: 0.12; }
+  12%  { opacity: 0.5; }
+  18%  { opacity: 0.9; }
   25%  { opacity: 1; }
-  40%  { opacity: 0.62; }
-  55%  { opacity: 0.38; }
-  70%  { opacity: 0.22; }
-  85%  { opacity: 0.12; }
-  100% { opacity: 0.08; }
+  34%  { opacity: 0.5; }
+  44%  { opacity: 0.22; }
+  56%  { opacity: 0.09; }
+  70%  { opacity: 0.04; }
+  85%  { opacity: 0.02; }
+  100% { opacity: 0.02; }
 }
+
 
 
 
@@ -226,7 +321,7 @@
      animation-delay, então o delay de cada ponto tem de ser redeclarado
      depois dele; sem isso os 8 pontos empilham no centro e viram um blob. */
   animation: dotOrbit var(--spin) linear infinite;
-  animation-delay: calc(var(--spin) / 8 * var(--i) * -1);
+  animation-delay: calc(var(--spin) / 8 * var(--i));
   animation-play-state: paused;
   opacity: 0.95;
   box-shadow: 0 0 14px rgba(210, 218, 255, 0.6);
