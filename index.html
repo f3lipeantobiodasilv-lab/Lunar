@@ -32,42 +32,23 @@
        FASE 1 — Tela de boot
        ====================================================================== -->
   <section id="boot" class="boot" aria-label="Inicializando o Lunar OS">
-    <div class="boot__aura" aria-hidden="true"></div>
-
     <div class="boot__stage">
-      <!-- Órbita: canvas (geometria da lua cheia + anel de progresso) com a logo 3D por cima -->
-      <div class="boot__orbit" id="boot-orbit">
-        <canvas id="boot-canvas" class="boot__canvas" aria-hidden="true"></canvas>
-        <img
-          id="boot-logo"
-          class="boot__logo"
-          src="assets/lunar-boot.png"
-          alt="Lunar"
-          width="500" height="500"
-          draggable="false"
-          decoding="async"
-        />
-        <div class="boot__flash" aria-hidden="true"></div>
-      </div>
+      <!-- Só o ícone: fade-in suave, nada de moldura ou texto -->
+      <img
+        id="boot-logo"
+        class="boot__logo"
+        src="assets/lunar-boot.png"
+        alt="Lunar"
+        width="500" height="500"
+        draggable="false"
+        decoding="async"
+      />
 
-      <div class="boot__readout">
-        <span class="boot__wordmark">LUNAR</span>
-        <span class="boot__percent" id="boot-percent" aria-hidden="true">0<span class="boot__percent-sign">%</span></span>
+      <!-- Bolinhas girando (canvas procedural), no lugar da barra de progresso -->
+      <div class="boot__loader">
+        <canvas id="boot-spinner" class="boot__spinner" aria-hidden="true"></canvas>
+        <p class="boot__status" id="boot-status" role="status" aria-live="polite">Iniciando</p>
       </div>
-
-      <div
-        class="boot__track"
-        id="boot-track"
-        role="progressbar"
-        aria-valuemin="0"
-        aria-valuemax="100"
-        aria-valuenow="0"
-        aria-labelledby="boot-status"
-      >
-        <div class="boot__fill" id="boot-fill"></div>
-      </div>
-
-      <p class="boot__status" id="boot-status" role="status" aria-live="polite">Inicializando núcleo Lunar</p>
     </div>
 
     <div class="boot__controls">

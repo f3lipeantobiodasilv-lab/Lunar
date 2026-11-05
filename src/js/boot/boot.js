@@ -3,41 +3,42 @@
  * Controlador da tela de boot.
  *
  * Responsabilidades:
- *   • conduzir o progresso (curva com pequenas pausas, como um boot real);
- *   • só chegar a 100% quando os recursos críticos estiverem prontos
- *     (fonte + logo + primeiro frame), sem "barra falsa";
+ *   • manter as bolinhas girando enquanto o sistema carrega;
+ *   • só terminar quando os recursos críticos estiverem prontos
+ *     (fonte + ícone), sem encerrar por tempo e revelar tela quebrada;
  *   • disparar o som de boot sintetizado no fim;
- *   • fazer o fade-out elegante revelando a área de trabalho.
+ *   • fechar o anel de bolinhas e fazer o fade-out revelando a área de trabalho.
+ *
+ * O progresso continua existindo internamente (0 → 1) para alimentar os
+ * estados de texto, mas não há mais barra, percentual nem lua desenhada.
  */
 
-import { MoonProgress } from './moon-progress.js';
+import { SpinnerDots } from './spinner-dots.js';
 import { audio } from '../core/audio.js';
-import { clamp, easeInOutSine, prefersReducedMotion, smoothstep } from '../core/ease.js';
+import { clamp, prefersReducedMotion, smoothstep } from '../core/ease.js';
 
 /**
- * Curva do progresso em função do tempo normalizado.
- * Os trechos quase verticais/planos imitam as pausas de I/O de um boot real.
+ * Curva de carga em função do tempo normalizado.
+ * Os trechos quase planos imitam as pausas de I/O de um boot real; como agora
+ * não existe barra, ela serve apenas para trocar a mensagem de status.
  */
 const CURVE = [
   { t: 0.0, v: 0.0 },
-  { t: 0.07, v: 0.07 },
-  { t: 0.19, v: 0.27 },
-  { t: 0.27, v: 0.29 },
-  { t: 0.43, v: 0.53 },
-  { t: 0.53, v: 0.56 },
-  { t: 0.69, v: 0.78 },
-  { t: 0.79, v: 0.81 },
-  { t: 0.9, v: 0.94 },
+  { t: 0.1, v: 0.12 },
+  { t: 0.26, v: 0.3 },
+  { t: 0.36, v: 0.33 },
+  { t: 0.52, v: 0.55 },
+  { t: 0.63, v: 0.58 },
+  { t: 0.8, v: 0.8 },
+  { t: 0.9, v: 0.84 },
   { t: 1.0, v: 1.0 },
 ];
 
 const STEPS = [
-  { at: 0.0, label: 'Inicializando núcleo Lunar' },
-  { at: 0.18, label: 'Montando sistema de arquivos virtual em tmp/' },
-  { at: 0.38, label: 'Carregando tipografia e recursos' },
-  { at: 0.55, label: 'Calibrando áudio sintetizado' },
-  { at: 0.7, label: 'Sincronizando relógio orbital' },
-  { at: 0.85, label: 'Preparando a área de trabalho' },
+  { at: 0.0, label: 'Iniciando' },
+  { at: 0.2, label: 'Carregando recursos' },
+  { at: 0.5, label: 'Preparando a área de trabalho' },
+  { at: 0.82, label: 'Quase lá' },
 ];
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -61,37 +62,32 @@ export class BootSequence {
     this.reduceMotion = prefersReducedMotion();
 
     this.el = document.getElementById('boot');
-    this.orbit = document.getElementById('boot-orbit');
-    this.canvas = document.getElementById('boot-canvas');
     this.logo = document.getElementById('boot-logo');
-    this.flashEl = document.getElementById('boot-flash');
-    this.percentEl = document.getElementById('boot-percent');
-    this.trackEl = document.getElementById('boot-track');
-    this.fillEl = document.getElementById('boot-fill');
+    this.spinnerCanvas = document.getElementById('boot-spinner');
     this.statusEl = document.getElementById('boot-status');
     this.skipBtn = document.getElementById('boot-skip');
     this.soundBtn = document.getElementById('boot-sound');
     this.soundLabel = document.getElementById('boot-sound-label');
     this.desktop = document.getElementById('desktop');
 
-    this.moon = this.canvas ? new MoonProgress(this.canvas) : null;
+    this.spinner = this.spinnerCanvas ? new SpinnerDots(this.spinnerCanvas) : null;
 
     this.state = 'idle'; // idle | running | completing | revealing | done
     this._revealTimer = null;
     this.startTime = 0;
-    this.rafId = null;
-    this.lastPercent = -1;
+    this.progress = 0;
+    this._progressRaf = null;
     this.lastStep = -1;
     this.assetsReady = false;
     this.waitingForGesture = false;
     this._gestureResolve = null;
     this._timings = {
-      load: this.reduceMotion ? 1500 : 3400,
+      load: this.reduceMotion ? 1500 : 3200,
       settle: this.reduceMotion ? 320 : 1900,
       fade: this.reduceMotion ? 260 : 900,
     };
 
-    this._tick = this._tick.bind(this);
+    this._updateProgress = this._updateProgress.bind(this);
     this._bind();
   }
 
@@ -101,10 +97,11 @@ export class BootSequence {
     if (!this.el) return;
     clearTimeout(this._revealTimer);
     this._revealTimer = null;
+
     this.state = 'running';
     this.assetsReady = false;
     this.startTime = performance.now();
-    this.lastPercent = -1;
+    this.progress = 0;
     this.lastStep = -1;
 
     this.el.classList.remove(
@@ -118,24 +115,18 @@ export class BootSequence {
     this.el.inert = false;
     document.body.classList.add('is-booting');
 
-    this.flashEl?.classList.remove('is-firing');
     this._releaseGestureWait();
 
     this.desktop?.classList.remove('is-visible');
     this.desktop?.setAttribute('aria-hidden', 'true');
 
-    this.fillEl.style.width = '0%';
-    this.trackEl.setAttribute('aria-valuenow', '0');
-    this.setPercentText(0);
     this.setStatus(STEPS[0].label);
+    this.spinner?.reset();
+    this.spinner?.start();
 
-    this.moon?.setProgress(0, { immediate: true });
-    this.moon?.start();
-
-    // O progresso nunca passa de 88% antes dos recursos estarem prontos.
+    // O texto de status só avança quando os recursos estiverem prontos.
     this._waitForAssets();
-
-    this.rafId = requestAnimationFrame(this._tick);
+    this._progressRaf = requestAnimationFrame(this._updateProgress);
   }
 
   _bind() {
@@ -162,13 +153,13 @@ export class BootSequence {
     this.el?.addEventListener('pointerdown', unlockOnGesture);
     window.addEventListener('keydown', unlockOnGesture, { once: true });
 
-    // Pausa o loop do canvas quando a aba fica oculta (economia real de bateria).
+    // Pausa a animação quando a aba fica oculta (economia real de bateria).
     document.addEventListener('visibilitychange', () => {
       if (this.state !== 'running' && this.state !== 'completing') return;
       if (document.hidden) {
-        this.moon?.stop();
+        this.spinner?.stop();
       } else {
-        this.moon?.start();
+        this.spinner?.start();
       }
     });
 
@@ -176,22 +167,17 @@ export class BootSequence {
     this._syncSoundButton();
   }
 
-  /** Espera fonte, logo e um frame — para o 100% ser verdadeiro. */
+  /** Espera fonte, ícone e um frame — para encerrar só quando estiver tudo lá. */
   async _waitForAssets() {
     const jobs = [];
 
     if (document.fonts?.ready) {
-      jobs.push(
-        Promise.race([
-          document.fonts.ready,
-          wait(2600),
-        ]).catch(() => {})
-      );
+      jobs.push(Promise.race([document.fonts.ready, wait(2600)]).catch(() => {}));
     }
 
     jobs.push(
       Promise.race([
-        document.fonts?.load?.('600 16px "Plus Jakarta Sans"').catch(() => {}),
+        document.fonts?.load?.('500 16px "Plus Jakarta Sans"').catch(() => {}),
         wait(2000),
       ])
     );
@@ -213,40 +199,28 @@ export class BootSequence {
     this.assetsReady = true;
   }
 
-  _tick(now) {
+  /** Mantém a curva interna de carga e troca a mensagem de status. */
+  _updateProgress(now) {
     if (this.state !== 'running') return;
 
     const elapsed = now - this.startTime;
     const t = clamp(elapsed / this._timings.load, 0, 1);
     const curve = sampleCurve(t);
+    this.progress = this.assetsReady ? curve : Math.min(curve, 0.88);
 
-    // Trava em 88% até os recursos estarem prontos.
-    const capped = this.assetsReady ? curve : Math.min(curve, 0.88);
-    const progress = clamp(capped, 0, 1);
-
-    this.moon?.setProgress(progress);
-
-    const percent = Math.round(progress * 100);
-    if (percent !== this.lastPercent) {
-      this.lastPercent = percent;
-      this.setPercentText(percent);
-      this.fillEl.style.width = `${progress * 100}%`;
-      this.trackEl.setAttribute('aria-valuenow', String(percent));
-    }
-
-    const step = this._stepFor(progress);
+    const step = this._stepFor(this.progress);
     if (step !== this.lastStep) {
       this.lastStep = step;
       this.setStatus(STEPS[step].label);
     }
 
     if (t >= 1 && this.assetsReady) {
-      this.rafId = null;
+      this._progressRaf = null;
       this._complete();
       return;
     }
 
-    this.rafId = requestAnimationFrame(this._tick);
+    this._progressRaf = requestAnimationFrame(this._updateProgress);
   }
 
   _stepFor(progress) {
@@ -264,18 +238,14 @@ export class BootSequence {
     this.state = 'completing';
 
     this.el.classList.add('is-complete');
-    this.moon?.setProgress(1);
-    this.moon?.pulse(1);
-    this.flashEl?.classList.add('is-firing');
-    this.fillEl.style.width = '100%';
-    this.trackEl.setAttribute('aria-valuenow', '100');
-    this.setPercentText(100);
-    this.setStatus('Sistema pronto');
+    this.setStatus('Pronto');
+    // Fecha o anel de bolinhas e desacelera até parar.
+    this.spinner?.complete();
 
     await this._playBootSound();
     if (this.state !== 'completing') return; // pode ter sido pulado/reiniciado
 
-    await wait(this.reduceMotion ? 120 : 260);
+    await wait(this.reduceMotion ? 120 : 320);
     this._reveal();
   }
 
@@ -355,8 +325,7 @@ export class BootSequence {
 
   _reveal() {
     this.state = 'revealing';
-    this.moon?.stop();
-    this.setStatus('Sistema pronto');
+    this.setStatus('Pronto');
 
     this.el.classList.add('is-leaving');
     this.desktop?.classList.add('is-visible');
@@ -366,6 +335,7 @@ export class BootSequence {
       if (this.state !== 'revealing') return;
       this.el.classList.add('is-gone');
       this.el.setAttribute('aria-hidden', 'true');
+      this.spinner?.stop();
       document.body.classList.remove('is-booting');
       this.state = 'done';
       this.onReveal();
@@ -385,15 +355,13 @@ export class BootSequence {
     // Já revelado: nada a fazer.
     if (this.state === 'done' || this.state === 'revealing') return;
 
-    if (this.rafId) cancelAnimationFrame(this.rafId);
-    this.rafId = null;
+    if (this._progressRaf) cancelAnimationFrame(this._progressRaf);
+    this._progressRaf = null;
     this.assetsReady = true;
 
     if (this.state === 'running') {
+      this.progress = 1;
       this.startTime = performance.now() - this._timings.load;
-      this.moon?.setProgress(1, { immediate: true });
-      this.setPercentText(100);
-      this.setStatus('Sistema pronto');
       this._complete();
       return;
     }
@@ -407,16 +375,11 @@ export class BootSequence {
 
   destroy() {
     clearTimeout(this._revealTimer);
-    if (this.rafId) cancelAnimationFrame(this.rafId);
-    this.moon?.destroy();
+    if (this._progressRaf) cancelAnimationFrame(this._progressRaf);
+    this.spinner?.destroy();
   }
 
   // -------------------------------------------------------------- helpers ---
-
-  setPercentText(value) {
-    if (!this.percentEl) return;
-    this.percentEl.innerHTML = `${value}<span class="boot__percent-sign">%</span>`;
-  }
 
   setStatus(text) {
     if (!this.statusEl || this.statusEl.textContent === text) return;
